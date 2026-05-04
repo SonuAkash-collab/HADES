@@ -22,5 +22,5 @@ print(f"Answer: {answer}")
 print("\nTelemetry:")
 for fault in st.session_state.telemetry.get("memory_faults", []):
     print(f"- {fault}")
-for log in st.session_state.telemetry.get("sentinel_log", []):
+for log in st.session_state.telemetry.get("cerberus_log", []):
     print(f"- {log}")

@@ -5,7 +5,7 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import pymupdf4llm
 from shared.extractor import extract_source_triples
-from sentinel.core import build_source_graph
+from cerberus.core import build_source_graph
 from sentence_transformers import SentenceTransformer
 
 STOP_MARKERS = ('## references', '## further reading', '## see also',

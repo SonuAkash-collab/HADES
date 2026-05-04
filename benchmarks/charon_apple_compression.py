@@ -1,12 +1,12 @@
 import time
 import json
 import re
-from caveman.core.cache import L1Cache
+from charon.core.cache import L1Cache
 from shared.triple import KnowledgeTriple
 from shared.extractor import extract_source_triples
-from caveman.core.graph import build_graph, rank_triples_by_importance
-from caveman.core.compressor import generate_caveman_prose
-from caveman.benchmark.metrics import count_tokens, sdpt, calculate_sdpt
+from charon.core.graph import build_graph, rank_triples_by_importance
+from charon.core.compressor import generate_charon_prose
+from charon.benchmark.metrics import count_tokens, sdpt, calculate_sdpt
 from app import get_embedder
 
 SOURCE_TEXT = """
@@ -89,7 +89,7 @@ They are in the same subfamily as pears.
 
 def run_analysis():
     print("=" * 80)
-    print("CAVEMAN COMPRESSION ANALYSIS — Apple Wikipedia")
+    print("CHARON COMPRESSION ANALYSIS — Apple Wikipedia")
     print("=" * 80)
 
     raw_tokens = count_tokens(SOURCE_TEXT)
@@ -132,7 +132,7 @@ def run_analysis():
         # Final state (after re-ranking and potential eviction)
         final_triples = [e.triple for e in cache.active_facts.values()]
         
-        compressed_text = generate_caveman_prose(final_triples)
+        compressed_text = generate_charon_prose(final_triples)
         
         tokens = count_tokens(compressed_text)
         acus = len(final_triples)

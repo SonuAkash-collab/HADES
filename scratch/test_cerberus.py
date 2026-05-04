@@ -2,8 +2,8 @@
 import sys
 import os
 sys.path.append(os.getcwd())
-from sentinel.core.source_graph import build_source_graph
-from sentinel.core.verifier import verify_claim
+from cerberus.core.source_graph import build_source_graph
+from cerberus.core.verifier import verify_claim
 from shared.triple import KnowledgeTriple
 from shared.extractor import extract_source_triples
 

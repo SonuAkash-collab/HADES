@@ -1,15 +1,15 @@
 import pymupdf4llm, re, json, os, datetime
 from shared.extractor import extract_source_triples
-from caveman.core.graph import build_graph, merge_similar_nodes
-from caveman.core import rank_triples_by_importance, L1Cache, generate_caveman_prose
-from sentinel.core import build_source_graph, verify_claim
+from charon.core.graph import build_graph, merge_similar_nodes
+from charon.core import rank_triples_by_importance, L1Cache, generate_charon_prose
+from cerberus.core import build_source_graph, verify_claim
 from shared.triple import KnowledgeTriple
 from sentence_transformers import SentenceTransformer
-from caveman.benchmark.metrics import count_tokens, sdpt as calculate_sdpt
-from caveman.benchmark.run_benchmark import _check_accuracy, ask_judge
+from charon.benchmark.metrics import count_tokens, sdpt as calculate_sdpt
+from charon.benchmark.run_benchmark import _check_accuracy, ask_judge
 from typing import Callable, Sequence
 from app import _build_partitioned_messages, get_embedder
-from caveman.core.semantic_arbitrator import verify_facts_against_query
+from charon.core.semantic_arbitrator import verify_facts_against_query
 import streamlit as st
 from app import _chat_loop, get_embedder, _inject_clean_facts_into_l1
 
@@ -87,7 +87,7 @@ def run_apple_benchmark():
     if "telemetry" not in st.session_state:
         st.session_state.telemetry = {
             "memory_faults": [],
-            "sentinel_log": [],
+            "cerberus_log": [],
             "tool_calls": 0,
             "l1_status": "benchmark"
         }

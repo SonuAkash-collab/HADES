@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 import sys
 
-from caveman.core.cache import L1Cache
-from caveman.core.compressor import generate_caveman_prose
-from caveman.core.graph import rank_triples_by_importance
+from charon.core.cache import L1Cache
+from charon.core.compressor import generate_charon_prose
+from charon.core.graph import rank_triples_by_importance
 from shared.extractor import extract_source_triples
 
 
@@ -33,7 +33,7 @@ def main(filename: str = "source_material.txt") -> None:
         cache.add_fact(triple, pagerank_score=score)
 
     active_triples = [entry.triple for entry in cache.active_facts.values()]
-    final_text = generate_caveman_prose(active_triples)
+    final_text = generate_charon_prose(active_triples)
 
     print("(1) Total Triples Extracted")
     print(f"Count: {len(triples)}")
@@ -45,7 +45,7 @@ def main(filename: str = "source_material.txt") -> None:
         print(f"{idx}. {triple.as_text()}")
     print()
 
-    print("(3) Final Compressed Caveman Text")
+    print("(3) Final Compressed Charon Text")
     print(final_text)
 
 

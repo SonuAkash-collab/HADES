@@ -24,5 +24,5 @@ def save_verified_fact(triple: KnowledgeTriple, source_page: int | None = None) 
     save_fact(
         triple,
         source_page=source_page,
-        sentinel_status="CLEAN",
+        cerberus_status="CLEAN",
     )

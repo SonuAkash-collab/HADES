@@ -20,30 +20,30 @@ def compress_triples(triples: list[KnowledgeTriple], max_items: int = 5) -> str:
     return "\n".join(f"- {triple.as_text()}" for triple in selected)
 
 
-def build_caveman_prompt(triples: list[KnowledgeTriple]) -> str:
+def build_charon_prompt(triples: list[KnowledgeTriple]) -> str:
     fact_block = compress_triples(triples)
     return (
-        "You are Caveman, a local compression layer. "
+        "You are Charon, a local compression layer. "
         "Summarize the following facts into compact, factual prose without inventing new claims.\n"
         f"{fact_block}"
     )
 
 
-def generate_caveman_prose(triples: list[KnowledgeTriple]) -> str:
-    prompt = build_caveman_prompt(triples)
+def generate_charon_prose(triples: list[KnowledgeTriple]) -> str:
+    prompt = build_charon_prompt(triples)
     messages = [
         {
             "role": "system",
-            "content": "Return only compressed Caveman-style text. No determiners. No filler.",
+            "content": "Return only compressed Charon-style text. No determiners. No filler.",
         },
         {"role": "user", "content": prompt},
     ]
     response = ollama.chat(model=OLLAMA_MODEL, messages=messages)
     content = response.get('message', {}).get('content', '').strip()
-    return _enforce_caveman_output(content)
+    return _enforce_charon_output(content)
 
 
-def _enforce_caveman_output(text: str) -> str:
+def _enforce_charon_output(text: str) -> str:
     cleaned = text.strip()
     cleaned = re.sub(r"```.*?```", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"^[\-*\d\.\s]+", "", cleaned, flags=re.MULTILINE)

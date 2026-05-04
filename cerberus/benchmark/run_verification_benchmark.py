@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sentinel.core import build_source_graph, verify_claim
+from cerberus.core import build_source_graph, verify_claim
 from shared.extractor import extract_claim_triples, extract_source_triples
 
 
@@ -52,7 +52,7 @@ def main() -> int:
     fp = 0
     fn = 0
 
-    print("SENTINEL VERIFICATION BENCHMARK")
+    print("CERBERUS VERIFICATION BENCHMARK")
     print("=" * 90)
     print(f"Source triples extracted: {len(source_triples)}")
     print(f"Claims evaluated: {len(CLAIMS)}")

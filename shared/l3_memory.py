@@ -11,8 +11,8 @@ from shared.triple import KnowledgeTriple
 
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB_PATH = _WORKSPACE_ROOT / "sentinel" / "core" / "wiki.db"
-DEFAULT_LEGACY_JSON_PATH = _WORKSPACE_ROOT / "sentinel" / "core" / "wiki.json"
+DEFAULT_DB_PATH = _WORKSPACE_ROOT / "cerberus" / "core" / "wiki.db"
+DEFAULT_LEGACY_JSON_PATH = _WORKSPACE_ROOT / "cerberus" / "core" / "wiki.json"
 _DB_LOCK = threading.RLock()
 _INITIALIZED_DATABASES: set[Path] = set()
 
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
     condition TEXT NOT NULL DEFAULT '',
     temporal_anchors TEXT NOT NULL DEFAULT '[]',
     source_page INTEGER,
-    sentinel_status TEXT NOT NULL CHECK (sentinel_status IN ('CLEAN', 'DIRTY')),
+    cerberus_status TEXT NOT NULL CHECK (cerberus_status IN ('CLEAN', 'DIRTY')),
     timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(subject, verb, object, condition, temporal_anchors)
 );
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 
 _INSERT_FACT_SQL = """
 INSERT OR IGNORE INTO knowledge_base
-    (subject, verb, object, modality, is_negated, condition, temporal_anchors, source_page, sentinel_status, timestamp)
+    (subject, verb, object, modality, is_negated, condition, temporal_anchors, source_page, cerberus_status, timestamp)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 
@@ -71,7 +71,7 @@ def save_fact(
     object_text: str | None = None,
     *,
     source_page: int | None = None,
-    sentinel_status: str = "CLEAN",
+    cerberus_status: str = "CLEAN",
     db_path: str | Path | None = None,
 ) -> bool:
     triple = (
@@ -86,9 +86,9 @@ def save_fact(
     if not (normalized_subject and normalized_verb and normalized_object):
         return False
 
-    normalized_status = str(sentinel_status).strip().upper() or "CLEAN"
+    normalized_status = str(cerberus_status).strip().upper() or "CLEAN"
     if normalized_status not in {"CLEAN", "DIRTY"}:
-        raise ValueError("sentinel_status must be CLEAN or DIRTY")
+        raise ValueError("cerberus_status must be CLEAN or DIRTY")
 
     normalized_source_page = _normalize_source_page(source_page)
     resolved_db_path = initialize_l3_memory(db_path=db_path)
@@ -99,7 +99,7 @@ def save_fact(
             # Check for existing facts with same subject+verb but different object
             existing = conn.execute(
                 """SELECT object FROM knowledge_base
-                   WHERE subject = ? AND verb = ? AND sentinel_status = 'CLEAN'""",
+                   WHERE subject = ? AND verb = ? AND cerberus_status = 'CLEAN'""",
                 (normalized_subject, normalized_verb)
             ).fetchall()
 
@@ -145,9 +145,9 @@ def fetch_clean_facts(db_path: str | Path | None = None) -> list[dict[str, Any]]
             rows = conn.execute(
                 """
                 SELECT id, subject, verb, object, modality, is_negated, condition, 
-                       temporal_anchors, source_page, sentinel_status, timestamp
+                       temporal_anchors, source_page, cerberus_status, timestamp
                 FROM knowledge_base
-                WHERE sentinel_status = 'CLEAN'
+                WHERE cerberus_status = 'CLEAN'
                 ORDER BY id ASC
                 """
             ).fetchall()
@@ -188,7 +188,7 @@ def _migrate_legacy_json(db_path: Path, legacy_json_path: Path) -> int:
                 if not (subject and verb and object_text):
                     continue
 
-                status = str(item.get("sentinel_status", "CLEAN")).strip().upper() or "CLEAN"
+                status = str(item.get("cerberus_status", "CLEAN")).strip().upper() or "CLEAN"
                 if status not in {"CLEAN", "DIRTY"}:
                     status = "CLEAN"
 

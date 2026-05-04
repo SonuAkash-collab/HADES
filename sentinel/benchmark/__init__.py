@@ -1,1 +1,0 @@
-"""Sentinel benchmark package."""

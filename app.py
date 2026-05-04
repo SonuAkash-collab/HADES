@@ -11,8 +11,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pyvis.network import Network
 
-from caveman.core import L1Cache, rank_triples_by_importance
-from sentinel.core import build_source_graph, verify_claim
+from charon.core import L1Cache, rank_triples_by_importance
+from cerberus.core import build_source_graph, verify_claim
 from shared.extractor import extract_claim_triples, extract_source_triples
 from shared.l3_memory import fetch_clean_facts, save_fact
 from shared.triple import KnowledgeTriple
@@ -119,7 +119,7 @@ def _init_session_state() -> None:
             "l1_status": "initialized",
             "tool_calls": 0,
             "memory_faults": [],
-            "sentinel_log": [],
+            "cerberus_log": [],
         }
 
     if "loaded_pdf_name" not in st.session_state:
@@ -550,7 +550,7 @@ def process_pdf(file) -> tuple[int, int]:
 
     # Optional deep entity resolution pass
     if st.session_state.get("deep_entity_resolution", False):
-        from caveman.core.graph import normalise_entities_with_llm
+        from charon.core.graph import normalise_entities_with_llm
         with st.spinner("Deep entity resolution running..."):
             source_graph.graph, extra_merges = normalise_entities_with_llm(
                 source_graph.graph,
@@ -675,10 +675,10 @@ def _render_sidebar() -> None:
 
         st.divider()
         st.markdown(
-            "<div class='telemetry-label' style='color:#b388ff'>Sentinel Gate Log</div>",
+            "<div class='telemetry-label' style='color:#b388ff'>Cerberus Gate Log</div>",
             unsafe_allow_html=True
         )
-        for entry in st.session_state.telemetry.get("sentinel_log", [])[-5:]:
+        for entry in st.session_state.telemetry.get("cerberus_log", [])[-5:]:
             if "CLEAN" in entry:
                 colour = "#00e676"
             elif "CONTRADICTION" in entry:
@@ -711,7 +711,7 @@ def _render_sidebar() -> None:
 
 
 
-def _run_sentinel_writeback(final_answer: str) -> bool:
+def _run_cerberus_writeback(final_answer: str) -> bool:
     """Verify answer triples against the source graph.
 
     Returns ``True`` if no triples actively **contradict** the source.
@@ -720,7 +720,7 @@ def _run_sentinel_writeback(final_answer: str) -> bool:
     """
     source_graph = st.session_state.source_graph
     if source_graph is None:
-        _push_telemetry_item("sentinel_log", "No source graph loaded; Sentinel verification skipped.")
+        _push_telemetry_item("cerberus_log", "No source graph loaded; Cerberus verification skipped.")
         return True
 
     import re as _re
@@ -746,7 +746,7 @@ def _run_sentinel_writeback(final_answer: str) -> bool:
         from shared.extractor import _extract_svo_triples
         answer_triples = _extract_svo_triples(final_answer)
     if not answer_triples:
-        _push_telemetry_item("sentinel_log", "No triples extracted from assistant answer.")
+        _push_telemetry_item("cerberus_log", "No triples extracted from assistant answer.")
         return True
 
     source_page_lookup: dict[tuple[str, str, str], int] = st.session_state.get("triple_source_pages", {})
@@ -759,24 +759,24 @@ def _run_sentinel_writeback(final_answer: str) -> bool:
             inserted = save_fact(
                 triple,
                 source_page=source_page,
-                sentinel_status="CLEAN",
+                cerberus_status="CLEAN",
             )
             citation = f"p.{source_page}" if source_page > 0 else "p.?"
             write_result = "stored" if inserted else "duplicate_ignored"
             _push_telemetry_item(
-                "sentinel_log",
+                "cerberus_log",
                 f"✅ CLEAN | {triple.as_text()} | {verdict.reason} | {citation} | {write_result}",
             )
         elif verdict.label == "contradiction":
             has_contradiction = True
             _push_telemetry_item(
-                "sentinel_log",
+                "cerberus_log",
                 f"❌ CONTRADICTION | {triple.as_text()} | {verdict.reason}",
             )
         else:
             # Neutral — not entailed but not contradicted either (paraphrase)
             _push_telemetry_item(
-                "sentinel_log",
+                "cerberus_log",
                 f"⚠️ NEUTRAL | {triple.as_text()} | {verdict.reason}",
             )
 
@@ -863,7 +863,7 @@ def _chat_loop(prompt: str) -> str:
 def render_graph_visual(source_graph) -> str:
     """Build a PyVis interactive graph from the L2 SourceGraph.
 
-    Nodes are sized by PageRank and colored by Sentinel verification
+    Nodes are sized by PageRank and colored by Cerberus verification
     status: green = Clean, red = Dirty, blue = unverified.
     Returns the generated HTML as a string.
     """
@@ -923,10 +923,10 @@ def render_graph_visual(source_graph) -> str:
 
     max_pr = max(pr_scores.values()) if pr_scores else 1.0
 
-    # ── Sentinel verification status lookup ──
-    sentinel_log = st.session_state.telemetry.get("sentinel_log", [])
+    # ── Cerberus verification status lookup ──
+    cerberus_log = st.session_state.telemetry.get("cerberus_log", [])
     node_status: dict[str, str] = {}  # node label -> "clean" | "dirty"
-    for entry in sentinel_log:
+    for entry in cerberus_log:
         entry_lower = entry.lower()
         if "clean" in entry_lower:
             status = "clean"
@@ -954,7 +954,7 @@ def render_graph_visual(source_graph) -> str:
         pr = pr_scores.get(node, 0.0)
         size = 10 + 40 * (pr / max_pr) if max_pr else 15
 
-        # Determine color from Sentinel status
+        # Determine color from Cerberus status
         status = node_status.get(label)
         if status == "clean":
             color = COLOR_CLEAN
@@ -1297,7 +1297,7 @@ h1 {
                         status.write("Generating context and calling policy model")
                         final_answer = _chat_loop(prompt)
                         status.write("Running Cerberus verification and L3 write-back")
-                        is_clean = _run_sentinel_writeback(final_answer)
+                        is_clean = _run_cerberus_writeback(final_answer)
                         if not is_clean:
                             final_answer = (
                                 "🚨 CERBERUS GATE BLOCK: My policy engine attempted to answer this, "

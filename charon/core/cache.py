@@ -115,7 +115,7 @@ class L1Cache:
         """
         Add LLM-generated content to the SCRATCH set.
         All content here is dirty (unverified) by default.
-        It will be evicted and passed to Sentinel before 
+        It will be evicted and passed to Cerberus before 
         write-back to L2/L3.
         """
         cleaned = text.strip()
@@ -266,7 +266,7 @@ class L1Cache:
 
     def flush_scratch(self) -> list[str]:
         """
-        Evict all SCRATCH entries for Sentinel verification.
+        Evict all SCRATCH entries for Cerberus verification.
         Called by the write-back gate before session ends.
         Returns the list of dirty entries for verification.
         """

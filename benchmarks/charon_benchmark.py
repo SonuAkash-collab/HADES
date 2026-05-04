@@ -6,17 +6,17 @@ from typing import Any
 
 import ollama
 
-from caveman.benchmark.metrics import calculate_sdpt, count_tokens
-from caveman.core.cache import L1Cache
-from caveman.core.compressor import generate_caveman_prose
-from caveman.core.graph import rank_triples_by_importance
-from sentinel.core.source_graph import build_source_graph
-from sentinel.core.verifier import verify_claim
-from sentinel.core.wiki_storage import load_wiki, save_verified_fact
+from charon.benchmark.metrics import calculate_sdpt, count_tokens
+from charon.core.cache import L1Cache
+from charon.core.compressor import generate_charon_prose
+from charon.core.graph import rank_triples_by_importance
+from cerberus.core.source_graph import build_source_graph
+from cerberus.core.verifier import verify_claim
+from cerberus.core.wiki_storage import load_wiki, save_verified_fact
 from shared.extractor import extract_claim_triples, extract_source_triples
 from shared.triple import KnowledgeTriple
 from typing import Callable
-from caveman.core.semantic_arbitrator import verify_facts_against_query
+from charon.core.semantic_arbitrator import verify_facts_against_query
 
 
 DATASET: list[dict[str, str]] = [
@@ -137,7 +137,7 @@ def os_generate_response(
     OLLAMA_MODEL = "qwen2.5:1.5b"
     
     # 1. L1 Lookup - Modern HADES threshold (0.50 for MS-MARCO Cross-Encoder)
-    from caveman.core.semantic_arbitrator import _sigmoid, _load_cross_encoder
+    from charon.core.semantic_arbitrator import _sigmoid, _load_cross_encoder
     model = _load_cross_encoder()
     fact_texts = [f.as_text() for f in l1_cache_facts]
     if fact_texts:
@@ -197,11 +197,11 @@ def os_generate_response(
         return f"SYSTEM ERROR: {str(e)}"
 
 
-def ask_judge(caveman_context: str, l1_facts: list[KnowledgeTriple], question: str, source_graph) -> str:
+def ask_judge(charon_context: str, l1_facts: list[KnowledgeTriple], question: str, source_graph) -> str:
     print("\n" + "=" * 100)
-    print("L1 CONTEXT GENERATED (Caveman Prose)")
+    print("L1 CONTEXT GENERATED (Charon Prose)")
     print("=" * 100)
-    print(caveman_context)
+    print(charon_context)
 
     # Revolution: Use triples directly instead of re-extracting from condensed prose
     def l2_callback(query: str):
@@ -218,13 +218,13 @@ def ask_judge(caveman_context: str, l1_facts: list[KnowledgeTriple], question: s
     print("=" * 100)
     print(final_answer)
     
-    # Sentinel Write-Back Gate
+    # Cerberus Write-Back Gate
     from shared.extractor import extract_claim_triples
     dirty_triples = extract_claim_triples(final_answer)
     
     if dirty_triples:
         print("\n" + "=" * 100)
-        print("SENTINEL WRITE-BACK GATE")
+        print("CERBERUS WRITE-BACK GATE")
         print("=" * 100)
         for triple in dirty_triples:
             result = verify_claim(triple, source_graph, 
@@ -342,13 +342,13 @@ def main() -> int:
         cache.rerank_facts_for_query(question, embedder)
 
         cached_triples = [entry.triple for entry in cache.active_facts.values()]
-        caveman_text = generate_caveman_prose(cached_triples)
+        charon_text = generate_charon_prose(cached_triples)
 
-        caveman_tokens = count_tokens(caveman_text)
-        reduction = ((raw_tokens - caveman_tokens) / raw_tokens * 100.0) if raw_tokens else 0.0
-        sdpt_value = calculate_sdpt(len(cached_triples), caveman_tokens) if caveman_tokens > 0 else 0.0
+        charon_tokens = count_tokens(charon_text)
+        reduction = ((raw_tokens - charon_tokens) / raw_tokens * 100.0) if raw_tokens else 0.0
+        sdpt_value = calculate_sdpt(len(cached_triples), charon_tokens) if charon_tokens > 0 else 0.0
 
-        answer = ask_judge(caveman_text, cached_triples, question, source_graph)
+        answer = ask_judge(charon_text, cached_triples, question, source_graph)
         is_correct = _check_accuracy(answer, expected)
 
         rows.append(
@@ -357,7 +357,7 @@ def main() -> int:
                 "expected": expected,
                 "answer": answer,
                 "raw_tokens": raw_tokens,
-                "caveman_tokens": caveman_tokens,
+                "charon_tokens": charon_tokens,
                 "reduction": reduction,
                 "total_triples": total_triples,
                 "baseline_sdpt": baseline_sdpt,
@@ -368,16 +368,16 @@ def main() -> int:
         )
 
     print("=" * 130)
-    print("CAVEMAN BENCHMARK REPORT")
+    print("CHARON BENCHMARK REPORT")
     print("=" * 130)
     print(
-        f"{'Case':<4} {'Raw Tok':>8} {'Cave Tok':>10} {'Red%':>8} {'Baseline SDpT':>15} {'Caveman SDpT':>15} {'Improvement':>12} {'Accuracy':>10}"
+        f"{'Case':<4} {'Raw Tok':>8} {'Cave Tok':>10} {'Red%':>8} {'Baseline SDpT':>15} {'Charon SDpT':>15} {'Improvement':>12} {'Accuracy':>10}"
     )
     print("-" * 130)
     for index, row in enumerate(rows, start=1):
         accuracy_label = "PASS" if row["accuracy"] else "FAIL"
         print(
-            f"{index:<4} {row['raw_tokens']:>8} {row['caveman_tokens']:>10} "
+            f"{index:<4} {row['raw_tokens']:>8} {row['charon_tokens']:>10} "
             f"{row['reduction']:>7.2f}% {row['baseline_sdpt']:>15.4f} {row['sdpt']:>15.4f} "
             f"{row['sdpt_improvement']:>12.4f} {accuracy_label:>10}"
         )
@@ -396,19 +396,19 @@ def main() -> int:
         "accuracy": sum(1 for r in rows if r["accuracy"]) / len(rows),
         "avg_compression_ratio": sum(r["reduction"] for r in rows) / len(rows),
         "avg_baseline_sdpt": sum(r["baseline_sdpt"] for r in rows) / len(rows),
-        "avg_caveman_sdpt": sum(r["sdpt"] for r in rows) / len(rows),
+        "avg_charon_sdpt": sum(r["sdpt"] for r in rows) / len(rows),
         "avg_sdpt_improvement": sum(r["sdpt_improvement"] for r in rows) / len(rows),
         "cases": rows
     }
 
-    with open("benchmarks/caveman_benchmark_results.json", "w") as f:
+    with open("benchmarks/charon_benchmark_results.json", "w") as f:
         json.dump(results_summary, f, indent=2)
 
-    print("\n[SUCCESS] Results saved to benchmarks/caveman_benchmark_results.json")
+    print("\n[SUCCESS] Results saved to benchmarks/charon_benchmark_results.json")
     print(f"   Overall accuracy: {results_summary['accuracy']*100:.1f}%")
     print(f"   Avg compression: {results_summary['avg_compression_ratio']:.1f}%")
     print(f"   Avg baseline SDpT: {results_summary['avg_baseline_sdpt']:.2f}")
-    print(f"   Avg Caveman SDpT:  {results_summary['avg_caveman_sdpt']:.2f}")
+    print(f"   Avg Charon SDpT:  {results_summary['avg_charon_sdpt']:.2f}")
     print(f"   Avg improvement:   {results_summary['avg_sdpt_improvement']:.2f} tokens/ACU")
 
     return 0

@@ -6,7 +6,7 @@ from shared.triple import KnowledgeTriple
 
 __all__ = [
     "L1Cache",
-    "generate_caveman_prose",
+    "generate_charon_prose",
     "rank_triples_by_importance",
     "KnowledgeTriple",
     "extract_source_triples",

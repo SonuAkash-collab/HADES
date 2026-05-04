@@ -96,7 +96,7 @@ def _build_triple_index(graph: nx.DiGraph, embedder, source_sentences: list[str]
 
 
 def build_source_graph(triples: list[KnowledgeTriple], embedder=None, source_sentences: list[str] = None) -> SourceGraph:
-    from caveman.core import build_graph
+    from charon.core import build_graph
     graph = build_graph(triples)
     checksums: dict[str, str] = {}
 
@@ -109,7 +109,7 @@ def build_source_graph(triples: list[KnowledgeTriple], embedder=None, source_sen
     # PageRank rather than splitting it across two nodes.
     # Uses batched embedding — ~80ms overhead for 100 nodes.
     if embedder is not None:
-        from caveman.core.graph import merge_similar_nodes
+        from charon.core.graph import merge_similar_nodes
         graph, merged_count = merge_similar_nodes(
             graph, embedder, threshold=0.82
         )

@@ -1,5 +1,5 @@
 """
-Sentinel Verification Benchmark — Apple Wikipedia PDF
+Cerberus Verification Benchmark — Apple Wikipedia PDF
 ======================================================
 30 test cases across 5 difficulty tiers and 4 domains from the Apple article.
 
@@ -7,7 +7,7 @@ Domains: Botany | History | Culture | Production
 Difficulty: easy | medium | hard | adversarial | edge
 
 Run with:
-    $env:PYTHONPATH="."; .\.venv\Scripts\python.exe sentinel_apple_benchmark.py
+    $env:PYTHONPATH="."; .\.venv\Scripts\python.exe cerberus_apple_benchmark.py
 
 Place this file in your PrimaLLM root directory.
 """
@@ -339,11 +339,11 @@ BENCHMARK_CASES = [
 # Runner
 # ---------------------------------------------------------------------------
 def run_benchmark():
-    """Run all 30 cases through Sentinel and report metrics."""
+    """Run all 30 cases through Cerberus and report metrics."""
 
     try:
-        from sentinel.core.source_graph import SourceGraph
-        from sentinel.core.verifier import verify_claim
+        from cerberus.core.source_graph import SourceGraph
+        from cerberus.core.verifier import verify_claim
         from shared.triple import KnowledgeTriple
         from shared.extractor import extract_source_triples
     except ImportError as e:
@@ -352,7 +352,7 @@ def run_benchmark():
         return
 
     print("=" * 70)
-    print("SENTINEL VERIFICATION BENCHMARK — Apple Wikipedia (30 cases)")
+    print("CERBERUS VERIFICATION BENCHMARK — Apple Wikipedia (30 cases)")
     print("=" * 70)
 
     # Build source graph from the Apple document
@@ -363,7 +363,7 @@ def run_benchmark():
           f"{time.time() - t0:.2f}s")
 
     print("[2/3] Building SourceGraph...")
-    from sentinel.core.source_graph import build_source_graph
+    from cerberus.core.source_graph import build_source_graph
     source_graph = build_source_graph(source_triples)
     print(f"      Graph has {len(source_graph.triples)} triples")
     for t in source_graph.triples:
@@ -508,10 +508,10 @@ def run_benchmark():
         ]
     }
 
-    with open("benchmarks/sentinel_benchmark_results.json", "w") as f:
+    with open("benchmarks/cerberus_benchmark_results.json", "w") as f:
         json.dump(output, f, indent=2)
 
-    print("\nResults saved to benchmarks/sentinel_benchmark_results.json")
+    print("\nResults saved to benchmarks/cerberus_benchmark_results.json")
     print("   Commit this file to document your benchmark results.\n")
 
 

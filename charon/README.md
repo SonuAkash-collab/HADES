@@ -1,6 +1,6 @@
-# HADES L1 Cache — Caveman Compression Layer
+# HADES L1 Cache — Charon Compression Layer
 
-The Caveman pipeline compresses raw documents into token-efficient, graph-ranked prose for passage into the HADES memory hierarchy. It functions as the **L1 Cache Controller**, managing the active context window.
+The Charon pipeline compresses raw documents into token-efficient, graph-ranked prose for passage into the HADES memory hierarchy. It functions as the **L1 Cache Controller**, managing the active context window.
 
 ## Technical Implementation
 
@@ -25,7 +25,7 @@ If the L1 cache budget (e.g., 150 tokens) is too small to contain the answer, th
 
 ## Benchmark Analysis: The 8-Case QA Suite
 
-The Caveman benchmark evaluates the system's ability to answer high-precision questions using only compressed context.
+The Charon benchmark evaluates the system's ability to answer high-precision questions using only compressed context.
 
 ### Case Selection Strategy
 *   **Technical (ATP/Mitochondria, CRISPR)**: Tests the system's ability to preserve complex scientific terminology.
@@ -44,7 +44,7 @@ The Caveman benchmark evaluates the system's ability to answer high-precision qu
 ## Running the Benchmark
 
 ```bash
-python benchmarks/caveman_benchmark.py
+python benchmarks/charon_benchmark.py
 ```
 
-Results are saved to `benchmarks/caveman_benchmark_results.json`.
+Results are saved to `benchmarks/charon_benchmark_results.json`.

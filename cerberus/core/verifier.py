@@ -5,7 +5,7 @@ import spacy
 from functools import lru_cache
 from dataclasses import dataclass
 
-from sentinel.core.source_graph import SourceGraph
+from cerberus.core.source_graph import SourceGraph
 from shared.triple import KnowledgeTriple
 
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from shared.extractor import extract_claim_triples, extract_source_triples
-from sentinel.core.source_graph import build_source_graph
-from sentinel.core.verifier import verify_claim
-from sentinel.core.wiki_storage import save_verified_fact
+from cerberus.core.source_graph import build_source_graph
+from cerberus.core.verifier import verify_claim
+from cerberus.core.wiki_storage import save_verified_fact
 
 def main() -> None:
     # 1. The Source Document (Ground Truth)
@@ -17,7 +17,7 @@ def main() -> None:
     ai_response_true = "Neil Armstrong piloted the Lunar Module Eagle."
     ai_response_false = "Buzz Aldrin piloted the command module to Mars."
 
-    print("--- SENTINEL VERIFICATION ORACLE ---\n")
+    print("--- CERBERUS VERIFICATION ORACLE ---\n")
     
     print("1. Extracting Source Graph (Semantic Checksum)...")
     source_triples = extract_source_triples(source_text)
