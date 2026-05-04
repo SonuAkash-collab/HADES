@@ -237,11 +237,11 @@ class L1Cache:
                 # Penalize facts with different numbers (if not already purged by year)
                 mismatched_numbers = fact_numbers - query_numbers
                 if mismatched_numbers:
-                    stat_penalty = 0.05
+                    stat_penalty = 0.4
             else:
                 # If query is general (no numbers), penalize ANY facts with numbers
                 if fact_years or fact_numbers:
-                    stat_penalty = 0.2
+                    stat_penalty = 0.6
 
             # Blend structural importance, query relevance, and stat filter
             entry.pagerank_score = (

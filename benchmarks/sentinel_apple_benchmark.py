@@ -111,6 +111,10 @@ class BenchmarkCase:
     object: str
     expected_label: Literal["entailment", "contradiction", "neutral"]
     reasoning: str
+    modality: str = ""
+    is_negated: bool = False
+    condition: str = ""
+    temporal_anchors: tuple[str, ...] = ()
 
 
 BENCHMARK_CASES = [
@@ -306,6 +310,28 @@ BENCHMARK_CASES = [
         expected_label="contradiction",
         reasoning="Document says autumn, not winter. Seasonal swap on a botanical fact."
     ),
+    # ── N-ARY PROPERTY CASES (New for HADES Update) ────────────────────────
+    BenchmarkCase(
+        id=31, domain="botany", difficulty="medium",
+        subject="apple seeds", verb="release", object="cyanide",
+        modality="can", is_negated=False, condition="when digested",
+        expected_label="entailment",
+        reasoning="Tests modality (can) and condition (when digested) alignment."
+    ),
+    BenchmarkCase(
+        id=32, domain="botany", difficulty="medium",
+        subject="apple seeds", verb="harm", object="people",
+        is_negated=True, condition="if people eat a few seeds",
+        expected_label="entailment",
+        reasoning="Tests negation (not harm) with conditional context."
+    ),
+    BenchmarkCase(
+        id=33, domain="production", difficulty="hard",
+        subject="China", verb="produced", object="44,066,000 metric tons",
+        temporal_anchors=("2020", "2021"),
+        expected_label="entailment",
+        reasoning="Tests temporal anchors (2020 and 2021) alignment."
+    ),
 ]
 
 
@@ -367,6 +393,10 @@ def run_benchmark():
             subject=case.subject,
             verb=case.verb,
             object=case.object,
+            modality=case.modality,
+            is_negated=case.is_negated,
+            condition=case.condition,
+            temporal_anchors=case.temporal_anchors,
             extraction_method="benchmark",
             is_deterministic=True
         )
@@ -458,17 +488,30 @@ def run_benchmark():
         "by_domain": results["by_domain"],
         "by_difficulty": results["by_difficulty"],
         "failures": [
-            {"id": c.id, "domain": c.domain, "difficulty": c.difficulty,
-             "claim": f"{c.subject} | {c.verb} | {c.object}",
-             "expected": c.expected_label, "reasoning": c.reasoning}
+            {
+                "id": c.id, 
+                "domain": c.domain, 
+                "difficulty": c.difficulty,
+                "claim": {
+                    "subject": c.subject,
+                    "verb": c.verb,
+                    "object": c.object,
+                    "modality": c.modality,
+                    "is_negated": c.is_negated,
+                    "condition": c.condition,
+                    "temporal_anchors": c.temporal_anchors
+                },
+                "expected": c.expected_label, 
+                "reasoning": c.reasoning
+            }
             for c in results["failures"]
         ]
     }
 
-    with open("sentinel_benchmark_results.json", "w") as f:
+    with open("benchmarks/sentinel_benchmark_results.json", "w") as f:
         json.dump(output, f, indent=2)
 
-    print("\nResults saved to sentinel_benchmark_results.json")
+    print("\nResults saved to benchmarks/sentinel_benchmark_results.json")
     print("   Commit this file to document your benchmark results.\n")
 
 

@@ -1,120 +1,151 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from functools import lru_cache
 from typing import Iterable
 
-import spacy
-from gliner import GLiNER
+from transformers import pipeline
 
 from .triple import KnowledgeTriple
 
-ENTITY_LABELS = [
-    "person", "organization", "location", "event",
-    "concept", "object", "date", "quantity"
-]
 
-RELATION_LABELS = [
-    "is", "has", "belongs to", "located in", "founded by",
-    "works at", "created", "caused", "launched on",
-    "remained in", "part of", "used for", "descended to",
-    "orbited", "reported", "developed", "founded",
-    "comes from", "originated in", "was founded in", "was born in",
-    "produced", "manufactures", "grows in", "matures in",
-    "was sequenced in", "was cultivated by", "was discovered by",
-    "contains", "releases", "causes", "requires", "consists of",
-    "is classified as", "is native to", "was written by",
-    "was built in", "was established in", "produces",
-    "grows up to", "is measured at"
-]
 
 
 @lru_cache(maxsize=1)
-def _load_gliner_model():
-    return GLiNER.from_pretrained("knowledgator/gliner-relex-large-v0.5")
+def _load_rebel_model():
+    """Loads the REBEL seq2seq transformer model and tokenizer manually."""
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+    model_name = "Babelscape/rebel-large"
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    return model, tokenizer
 
 
-@lru_cache(maxsize=1)
-def _load_spacy_model():
-    try:
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        from spacy.cli import download
-        download("en_core_web_sm")
-        return spacy.load("en_core_web_sm")
 
 
-def _extract_svo_triples(text: str) -> list[KnowledgeTriple]:
+
+def _sanitize_pdf_text(text: str) -> str:
+    """Generic sanitization for PDF-derived text artifacts."""
+    # Normalize unicode
+    text = unicodedata.normalize('NFKD', text)
+    # Fix line-break hyphenation (e.g., 'knowl-\n edge' -> 'knowledge')
+    text = re.sub(r'([a-zA-Z])-\s*\n\s*([a-zA-Z])', r'\1\2', text)
+    # Collapse multiple spaces/newlines into a single space
+    text = re.sub(r'[ \t]+', ' ', text)
+    return text.strip()
+
+
+def _chunk_text(text: str, sentences_per_chunk: int = 3) -> list[str]:
+    """Splits text into chunks of ~3-4 sentences to fit REBEL's token limit."""
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    for i in range(0, len(sentences), sentences_per_chunk):
+        chunk = " ".join(sentences[i:i + sentences_per_chunk]).strip()
+        if chunk:
+            chunks.append(chunk)
+    return chunks
+
+
+def _parse_rebel_output(text: str) -> list[dict]:
     """
-    Open-world SVO extraction using spaCy with N-ary Property Edge model.
+    Standard REBEL decoding logic to parse <triplet>, <subj>, and <obj> tokens.
+    Mapping: <triplet> head <subj> tail <obj> type
     """
-    nlp = _load_spacy_model()
-    doc = nlp(text)
-    triples: list[KnowledgeTriple] = []
-
-    for sent in doc.sents:
-        # Find all verb tokens in the sentence to handle multiple clauses
-        verb_tokens = [t for t in sent if t.pos_ in {"VERB", "AUX"}]
+    triplets = []
+    relation, subject, object_ = '', '', ''
+    text = text.strip()
+    current = 'x'
+    
+    # Process tokens into head, tail, and type dictionaries
+    # Strip <pad> tokens that REBEL emits — these corrupt verb labels downstream
+    for token in text.replace("<s>", "").replace("</s>", "").replace("<pad>", "").split():
+        if token == "<triplet>":
+            current = 't'
+            if relation != '':
+                triplets.append({'head': subject.strip(), 'type': relation.strip(), 'tail': object_.strip()})
+                relation = ''
+            subject = ''
+        elif token == "<subj>":
+            current = 's'
+            if relation != '':
+                triplets.append({'head': subject.strip(), 'type': relation.strip(), 'tail': object_.strip()})
+                relation = ''
+            object_ = ''
+        elif token == "<obj>":
+            current = 'o'
+            relation = ''
+        else:
+            if current == 't':
+                subject += ' ' + token
+            elif current == 's':
+                object_ += ' ' + token
+            elif current == 'o':
+                relation += ' ' + token
+                
+    if relation != '':
+        triplets.append({'head': subject.strip(), 'type': relation.strip(), 'tail': object_.strip()})
         
-        # Capture all date/time entities in the sentence for "orphaned dates" logic
-        sent_dates = [ent for ent in sent.ents if ent.label_ in {"DATE", "TIME"}]
+    return triplets
 
-        for verb_token in verb_tokens:
-            subject = _find_subject(verb_token)
-            verb = verb_token.text.strip()
-            obj = _find_object(verb_token)
 
-            if subject and verb and obj:
-                # N-ary Property Extraction
-                is_negated = False
-                modality_parts = []
-                condition = ""
-                
-                for child in verb_token.children:
-                    if child.dep_ == "neg":
-                        is_negated = True
-                    elif child.dep_ == "advmod":
-                        modality_parts.append(child.text)
-                    elif child.dep_ == "advcl":
-                        condition = " ".join(t.text for t in child.subtree).strip()
-                
-                modality = " ".join(modality_parts).strip()
-
-                # Preposition migration: if object starts with a preposition, attach it to the verb
-                PREPOSITIONS = {"in", "on", "at", "from", "to", "by", "with", "for", "into", "of"}
-                obj_parts = obj.split()
-                if len(obj_parts) > 1 and obj_parts[0].lower() in PREPOSITIONS:
-                    prep = obj_parts[0]
-                    verb = f"{verb} {prep}"
-                    obj = " ".join(obj_parts[1:])
-
-                # Orphaned dates logic: dates in sentence not appearing in sub/verb/obj
-                triple_text_blobs = {subject.lower(), verb.lower(), obj.lower(), condition.lower(), modality.lower()}
-                orphaned_dates = tuple(
-                    ent.text.strip() for ent in sent_dates
-                    if not any(ent.text.lower() in blob for blob in triple_text_blobs)
-                )
-
-                triples.append(KnowledgeTriple(
-                    subject=subject,
-                    verb=verb,
-                    object=obj,
-                    temporal_anchors=orphaned_dates,
-                    modality=modality,
-                    is_negated=is_negated,
-                    condition=condition,
-                    extraction_method="spacy",
-                    is_deterministic=True
+def _extract_rebel_triples(text: str) -> list[KnowledgeTriple]:
+    """
+    Performs inference using REBEL and maps results to KnowledgeTriple objects.
+    """
+    model, tokenizer = _load_rebel_model()
+    chunks = _chunk_text(text)
+    all_triples: list[KnowledgeTriple] = []
+    
+    for chunk in chunks:
+        # Prepare inputs
+        inputs = tokenizer(chunk, return_tensors="pt")
+        
+        # Standard REBEL inference parameters
+        gen_outputs = model.generate(
+            inputs["input_ids"],
+            max_length=256, 
+            length_penalty=0, 
+            num_beams=3, 
+            num_return_sequences=3,
+        )
+        
+        for output in gen_outputs:
+            # Decode tensor output to text with special tokens
+            decoded_text = tokenizer.decode(output, skip_special_tokens=False)
+            
+            parsed_triplets = _parse_rebel_output(decoded_text)
+            for triplet in parsed_triplets:
+                all_triples.append(KnowledgeTriple(
+                    subject=triplet['head'],
+                    verb=triplet['type'],
+                    object=triplet['tail'],
+                    extraction_method="rebel",
+                    is_deterministic=False # Transformer-based
                 ))
-                
-    return triples
+            
+    return all_triples
+
+
+class RebelExtractor:
+    """Class-based interface for the REBEL extraction engine."""
+    def __init__(self):
+        # Ensure model is cached
+        _load_rebel_model()
+        
+    def extract(self, text: str) -> list[KnowledgeTriple]:
+        """Main extraction method for raw text."""
+        return _extract_rebel_triples(text)
 
 
 def extract_markdown_triples(markdown_text: str) -> list[KnowledgeTriple]:
     """
-    Parses Markdown text and extracts SVO triples while preserving hierarchical context
+    Parses Markdown text and extracts triples while preserving hierarchical context
     via structural triples linking headers to subjects.
     """
+    # Sanitize incoming PDF text artifacts
+    markdown_text = _sanitize_pdf_text(markdown_text)
+    
     lines = markdown_text.splitlines()
     active_header = "Document Root"
     grouped_text: list[str] = []
@@ -128,19 +159,43 @@ def extract_markdown_triples(markdown_text: str) -> list[KnowledgeTriple]:
         if not chunk_text:
             return
             
-        svo_triples = _extract_svo_triples(chunk_text)
+        # PIVOT: Use REBEL for extraction instead of spaCy SVO
+        rebel_triples = _extract_rebel_triples(chunk_text)
         
-        for svo in svo_triples:
-            all_triples.append(svo)
-            # Create structural linkage
-            structural_triple = KnowledgeTriple(
+        for triple in rebel_triples:
+            resolved_subject = triple.subject
+            # Simple pronoun resolution: resolve 'This', 'They', 'It' to header context
+            if triple.subject.lower() in {"this", "they", "it", "these"} and header != "Document Root":
+                prefix = header
+                if header.lower() in {"family", "description", "history", "origin"}:
+                    prefix = f"Apple {header}"
+                
+                resolved_subject = f"{prefix} ({triple.subject})"
+                # Update triple with resolved subject
+                triple = KnowledgeTriple(
+                    subject=resolved_subject,
+                    verb=triple.verb,
+                    object=triple.object,
+                    extraction_method=triple.extraction_method,
+                    is_deterministic=triple.is_deterministic
+                )
+                
+            all_triples.append(triple)
+            
+            # Create structural linkage between header and extracted subject
+            all_triples.append(KnowledgeTriple(
                 subject=header,
                 verb="contains concept",
-                object=svo.subject,
+                object=resolved_subject,
                 extraction_method="structural",
                 is_deterministic=True
-            )
-            all_triples.append(structural_triple)
+            ))
+
+    def clean_header(h):
+        h = h.replace("*", "").replace("_", "").strip()
+        if h.lower().replace(" ", "") == "family":
+            return "Family"
+        return h
 
     for line in lines:
         stripped = line.strip()
@@ -148,129 +203,126 @@ def extract_markdown_triples(markdown_text: str) -> list[KnowledgeTriple]:
             continue
             
         if stripped.startswith("#"):
-            # Process previous chunk
-            process_chunk(active_header, grouped_text)
+            process_chunk(clean_header(active_header), grouped_text)
             grouped_text = []
-            
-            # Update active header
             active_header = stripped.lstrip("#").strip()
         else:
             grouped_text.append(line)
 
-    # Process final chunk
-    process_chunk(active_header, grouped_text)
-    
+    process_chunk(clean_header(active_header), grouped_text)
     return all_triples
 
 
 def extract_source_triples(text: str) -> list[KnowledgeTriple]:
     """
-    Open-world extraction using spaCy, preserving Markdown hierarchy.
+    Pivot entry point: Open-world extraction using REBEL with Markdown hierarchy preservation.
     """
-    return extract_markdown_triples(text)
-
-
-def extract_numeric_triples(text: str) -> list[KnowledgeTriple]:
-    """
-    Dedicated pass to harvest percentages, dates, and quantities
-    that the SVO parser might miss.
-    """
-    nlp = _load_spacy_model()
-    doc = nlp(text)
-    triples = []
-    
-    for sent in doc.sents:
-        subject = _find_sent_root_subject(sent) or "Document"
-        numeric_ents = [ent for ent in sent.ents if ent.label_ in {"DATE", "PERCENT", "QUANTITY", "CARDINAL", "MONEY"}]
-        
-        for num_ent in numeric_ents:
-            triples.append(KnowledgeTriple(
-                subject=subject,
-                verb="has value",
-                object=num_ent.text.strip(),
-                extraction_method="spacy_numeric",
-                is_deterministic=True
-            ))
-    return triples
+    # Swap it into the pipeline
+    triples = extract_markdown_triples(text)
+    return _deduplicate(triples)
 
 
 def extract_claim_triples(text: str) -> list[KnowledgeTriple]:
     """
-    Closed-world extraction using GLiNER-relex.
-    Prioritises precision for verifying LLM claims.
+    Closed-world claim extraction. Now uses spaCy SVO as the primary
+    extractor since structured claims come directly from the LLM via
+    the CLAIMS JSON block in app.py. This function serves as a fallback.
     """
-    model = _load_gliner_model()
-
-    # Split text into manageable chunks (sentences) using a regex
-    chunks = re.split(r'(?<=[.!?])\s+', text)
-    chunks = [c.strip() for c in chunks if c.strip()]
-
-    if not chunks:
+    # Skip heavy parsing for very short texts
+    if not text or len(text.split()) < 3:
         return []
+    return _deduplicate(_extract_svo_triples(text))
 
-    # GLiNER can process multiple texts in a single batch
-    entities_list, relations_list = model.inference(
-        texts=chunks,
-        labels=ENTITY_LABELS,
-        relations=RELATION_LABELS,
-        threshold=0.3,
-        adjacency_threshold=0.5,
-        relation_threshold=0.75,
-        return_relations=True,
-        flat_ner=False
-    )
 
+def _deduplicate(triples: list[KnowledgeTriple]) -> list[KnowledgeTriple]:
+    """Removes duplicate triples based on subject, verb, and object content."""
+    seen: set[tuple[str, str, str]] = set()
+    unique: list[KnowledgeTriple] = []
+    for t in triples:
+        key = (t.subject.strip().lower(),
+               t.verb.strip().lower(),
+               t.object.strip().lower())
+        if key not in seen:
+            seen.add(key)
+            unique.append(t)
+    return unique
+
+@lru_cache(maxsize=1)
+def _load_spacy_model():
+    import spacy
+    try:
+        return spacy.load("en_core_web_sm")
+    except OSError:
+        from spacy.cli import download
+        download("en_core_web_sm")
+        return spacy.load("en_core_web_sm")
+
+def _extract_svo_triples(text: str) -> list[KnowledgeTriple]:
+    """
+    Open-world SVO extraction using spaCy.
+    """
+    nlp = _load_spacy_model()
+    doc = nlp(text)
     triples: list[KnowledgeTriple] = []
 
-    for relations in relations_list:
-        for relation in relations:
-            subject = relation["head"]["text"].strip()
-            predicate = relation["relation"].strip()
-            obj = relation["tail"]["text"].strip()
-            if subject and predicate and obj:
-                triples.append(KnowledgeTriple(
-                    subject=subject,
-                    verb=predicate,
-                    object=obj,
-                    extraction_method="gliner_relex",
-                    is_deterministic=True
-                ))
+    for sent in doc.sents:
+        subject = _find_subject(sent)
+        verb_token = _find_root_verb_token(sent)
+        verb = _verb_text(verb_token)
+        obj = _find_object(sent, verb_token)
 
-    return _deduplicate(triples)
+        if subject and verb and obj:
+            combined_triple_text = f"{subject} {verb} {obj}".lower()
+            orphaned_dates = tuple(
+                ent.text.strip() for ent in sent.ents
+                if ent.label_ in {"DATE", "TIME"} and ent.text.lower() not in combined_triple_text
+            )
 
+            PREPOSITIONS = {"in", "on", "at", "from", "to", "by", "with", "for", "into", "of"}
+            obj_parts = obj.split()
+            if len(obj_parts) > 1 and obj_parts[0].lower() in PREPOSITIONS:
+                prep = obj_parts[0]
+                verb = f"{verb} {prep}"
+                obj = " ".join(obj_parts[1:])
 
-def _find_subject(verb_token) -> str:
-    """Finds the subject relative to a specific verb token."""
-    for child in verb_token.children:
-        if child.dep_ in {"nsubj", "nsubjpass"}:
-            return _span_text(child)
-    
-    # Fallback: if this is an auxiliary verb, check its head (the main verb)
-    if verb_token.pos_ == "AUX" and verb_token.head.pos_ == "VERB":
-        for child in verb_token.head.children:
-            if child.dep_ in {"nsubj", "nsubjpass"}:
-                return _span_text(child)
-                
+            triples.append(KnowledgeTriple(
+                subject=subject,
+                verb=verb,
+                object=obj,
+                temporal_anchors=orphaned_dates,
+                extraction_method="spacy",
+                is_deterministic=True
+            ))
+    return triples
+
+def _find_subject(sent) -> str:
+    for token in sent:
+        if token.dep_ in {"nsubj", "nsubjpass"}:
+            return _span_text(token)
     return ""
 
+def _find_root_verb_token(sent):
+    for token in sent:
+        if token.dep_ == "ROOT" and token.pos_ in {"VERB", "AUX"}:
+            return token
+    return None
 
-def _find_sent_root_subject(sent) -> str:
-    """Finds the subject of the root verb in a sentence (for numeric pass fallback)."""
-    root = next((t for t in sent if t.dep_ == "ROOT"), None)
-    if root:
-        return _find_subject(root)
-    return ""
+def _verb_text(verb_token) -> str:
+    if verb_token is None:
+        return ""
+    return verb_token.text.strip()
 
+def _find_object(sent, verb_token) -> str:
+    if verb_token is None:
+        return ""
 
-def _find_object(verb_token) -> str:
-    """Finds the object relative to a specific verb token."""
     seen_ids = set()
     object_tokens = []
 
     # 1. Direct objects and attributes
-    for child in verb_token.children:
-        if child.dep_ in {"dobj", "obj", "attr", "oprd"}:
-            for t in child.subtree:
+    for token in sent:
+        if token.dep_ in {"dobj", "obj", "attr", "oprd"} and token.head == verb_token:
+            for t in token.subtree:
                 if t.i not in seen_ids:
                     seen_ids.add(t.i)
                     object_tokens.append(t)
@@ -290,20 +342,16 @@ def _find_object(verb_token) -> str:
     object_tokens.sort(key=lambda x: x.i)
     return " ".join(t.text for t in object_tokens).strip()
 
-
 def _span_text(token) -> str:
-    """Helper to get full subtree text for a token."""
-    return " ".join(t.text for t in token.subtree).strip()
+    subtree = getattr(token, "subtree", None)
+    if subtree is not None:
+        try:
+            text = " ".join(node.text for node in subtree).strip()
+            if text:
+                return text
+        except TypeError:
+            text = getattr(subtree, "text", "").strip()
+            if text:
+                return text
 
-
-def _deduplicate(triples: list[KnowledgeTriple]) -> list[KnowledgeTriple]:
-    seen: set[tuple[str, str, str]] = set()
-    unique: list[KnowledgeTriple] = []
-    for t in triples:
-        key = (t.subject.strip().lower(),
-               t.verb.strip().lower(),
-               t.object.strip().lower())
-        if key not in seen:
-            seen.add(key)
-            unique.append(t)
-    return unique
+    return getattr(token, "text", "").strip()

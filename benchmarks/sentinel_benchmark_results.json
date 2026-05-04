@@ -1,139 +1,147 @@
 {
   "benchmark": "Apple Wikipedia \u2014 30 cases",
   "metrics": {
-    "accuracy": 0.6333,
-    "precision": 0.6364,
-    "recall": 0.5,
-    "f1": 0.56,
-    "TP": 7,
-    "TN": 12,
-    "FP": 4,
-    "FN": 7
+    "accuracy": 0.8182,
+    "precision": 0.9231,
+    "recall": 0.7059,
+    "f1": 0.8,
+    "TP": 12,
+    "TN": 15,
+    "FP": 1,
+    "FN": 5
   },
   "by_domain": {
     "botany": {
-      "pass": 11,
-      "fail": 6
+      "pass": 16,
+      "fail": 3
     },
     "history": {
       "pass": 4,
       "fail": 0
     },
     "production": {
-      "pass": 3,
+      "pass": 4,
       "fail": 3
     },
     "culture": {
-      "pass": 1,
-      "fail": 2
+      "pass": 3,
+      "fail": 0
     }
   },
   "by_difficulty": {
     "easy": {
-      "pass": 8,
-      "fail": 3
+      "pass": 10,
+      "fail": 1
     },
     "medium": {
-      "pass": 6,
-      "fail": 4
+      "pass": 9,
+      "fail": 3
     },
     "hard": {
-      "pass": 4,
+      "pass": 5,
       "fail": 1
     },
     "edge": {
-      "pass": 1,
-      "fail": 3
+      "pass": 3,
+      "fail": 1
     }
   },
   "failures": [
     {
-      "id": 1,
-      "domain": "botany",
-      "difficulty": "easy",
-      "claim": "apple tree | comes from | southern Kazakhstan",
-      "expected": "entailment",
-      "reasoning": "Directly stated in the first sentence of the document."
-    },
-    {
       "id": 5,
       "domain": "production",
       "difficulty": "easy",
-      "claim": "China | grew | 49% of the total worldwide apple production",
+      "claim": {
+        "subject": "China",
+        "verb": "grew",
+        "object": "49% of the total worldwide apple production",
+        "modality": "",
+        "is_negated": false,
+        "condition": "",
+        "temporal_anchors": []
+      },
       "expected": "entailment",
       "reasoning": "Directly stated production statistic (tuned for semantic alignment)."
     },
     {
-      "id": 9,
-      "domain": "culture",
+      "id": 7,
+      "domain": "botany",
       "difficulty": "medium",
-      "claim": "Idunn | gives apples to | gods in Norse mythology",
+      "claim": {
+        "subject": "apple seeds",
+        "verb": "contain",
+        "object": "amygdalin",
+        "modality": "",
+        "is_negated": false,
+        "condition": "",
+        "temporal_anchors": []
+      },
       "expected": "entailment",
-      "reasoning": "Requires connecting Idunn to Norse mythology context."
+      "reasoning": "Paraphrase \u2014 document says 'Apples contain amygdalin', seeds implied."
     },
     {
       "id": 10,
       "domain": "botany",
       "difficulty": "medium",
-      "claim": "apple tree | is subfamily of | Rosaceae",
+      "claim": {
+        "subject": "apple tree",
+        "verb": "is subfamily of",
+        "object": "Rosaceae",
+        "modality": "",
+        "is_negated": false,
+        "condition": "",
+        "temporal_anchors": []
+      },
       "expected": "entailment",
       "reasoning": "Stated at end of document \u2014 requires reading to the family classification."
-    },
-    {
-      "id": 12,
-      "domain": "botany",
-      "difficulty": "medium",
-      "claim": "Malus domestica | is developed to grow in | colder climates",
-      "expected": "entailment",
-      "reasoning": "Requires connecting Malus sieversii usage to Malus domestica."
-    },
-    {
-      "id": 16,
-      "domain": "botany",
-      "difficulty": "easy",
-      "claim": "apple genome | was sequenced in | 2015",
-      "expected": "contradiction",
-      "reasoning": "Document says 2010, not 2015. Year swap."
     },
     {
       "id": 21,
       "domain": "production",
       "difficulty": "hard",
-      "claim": "Bramley seedling | is most common apple in | United Kingdom",
+      "claim": {
+        "subject": "Bramley seedling",
+        "verb": "is most common apple in",
+        "object": "United Kingdom",
+        "modality": "",
+        "is_negated": false,
+        "condition": "",
+        "temporal_anchors": []
+      },
       "expected": "contradiction",
       "reasoning": "Document says most common in England specifically, not the whole UK."
-    },
-    {
-      "id": 26,
-      "domain": "culture",
-      "difficulty": "medium",
-      "claim": "apple | appears in | the story of Adam and Eve",
-      "expected": "neutral",
-      "reasoning": "Document mentions religious significance but does not specify this story."
     },
     {
       "id": 28,
       "domain": "production",
       "difficulty": "edge",
-      "claim": "total world apple production 2020-2021 | was | 80,522,000 metric tons",
+      "claim": {
+        "subject": "total world apple production 2020-2021",
+        "verb": "was",
+        "object": "80,522,000 metric tons",
+        "modality": "",
+        "is_negated": false,
+        "condition": "",
+        "temporal_anchors": []
+      },
       "expected": "entailment",
       "reasoning": "Exact numeric fact from the World Production section \u2014 tests number extraction."
     },
     {
-      "id": 29,
+      "id": 32,
       "domain": "botany",
-      "difficulty": "edge",
-      "claim": "apples and pears | are in the same | subfamily",
+      "difficulty": "medium",
+      "claim": {
+        "subject": "apple seeds",
+        "verb": "harm",
+        "object": "people",
+        "modality": "",
+        "is_negated": true,
+        "condition": "if people eat a few seeds",
+        "temporal_anchors": []
+      },
       "expected": "entailment",
-      "reasoning": "Stated at the end: both in Maloideae \u2014 requires connecting two entities."
-    },
-    {
-      "id": 30,
-      "domain": "botany",
-      "difficulty": "edge",
-      "claim": "apple fruit | matures in | winter",
-      "expected": "contradiction",
-      "reasoning": "Document says autumn, not winter. Seasonal swap on a botanical fact."
+      "reasoning": "Tests negation (not harm) with conditional context."
     }
   ]
 }

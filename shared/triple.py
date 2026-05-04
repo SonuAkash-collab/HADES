@@ -16,19 +16,21 @@ class KnowledgeTriple:
     is_deterministic: bool = True
 
     def as_text(self) -> str:
-        text = f"{self.subject} {self.verb} {self.object}"
+        """
+        Formats the triple as clean subject-verb-object text.
+        Avoids grammatical inversions that confuse small LLMs.
+        """
+        parts = [
+            p.strip() for p in [self.subject, self.verb, self.object]
+            if p and p.strip()
+        ]
+        text = " ".join(parts)
+
         if self.is_negated:
-            text = f"{self.subject} not {self.verb} {self.object}"
-        
-        details = []
-        if self.modality:
-            details.append(f"Modality: {self.modality}")
-        if self.condition:
-            details.append(f"Condition: {self.condition}")
+            text = f"NOT: {text}"
         if self.temporal_anchors:
-            details.append(f"Context: {', '.join(self.temporal_anchors)}")
-            
-        if details:
-            text = f"{text} ({'; '.join(details)})"
-            
+            text += f" [{', '.join(self.temporal_anchors)}]"
+        if self.condition:
+            text += f" (if {self.condition})"
+
         return text

@@ -96,6 +96,28 @@ def save_fact(
 
     with _DB_LOCK:
         with _connect(resolved_db_path) as conn:
+            # Check for existing facts with same subject+verb but different object
+            existing = conn.execute(
+                """SELECT object FROM knowledge_base
+                   WHERE subject = ? AND verb = ? AND sentinel_status = 'CLEAN'""",
+                (normalized_subject, normalized_verb)
+            ).fetchall()
+
+            if existing:
+                existing_objects = [row["object"] for row in existing]
+                if normalized_object in existing_objects:
+                    return False  # exact duplicate, skip silently
+                # Conflicting fact — different object for same subject+verb
+                # Log the conflict but do not write; caller can decide
+                import logging
+                logging.warning(
+                    f"[L3 CONFLICT] Skipping write: '{normalized_subject} "
+                    f"{normalized_verb} {normalized_object}' conflicts with "
+                    f"existing: {existing_objects}"
+                )
+                return False
+
+            # No conflict — safe to write
             cursor = conn.execute(
                 _INSERT_FACT_SQL,
                 (

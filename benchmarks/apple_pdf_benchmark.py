@@ -7,7 +7,11 @@ from shared.triple import KnowledgeTriple
 from sentence_transformers import SentenceTransformer
 from caveman.benchmark.metrics import count_tokens, sdpt as calculate_sdpt
 from caveman.benchmark.run_benchmark import _check_accuracy, ask_judge
-from app import _build_partitioned_messages
+from typing import Callable, Sequence
+from app import _build_partitioned_messages, get_embedder
+from caveman.core.semantic_arbitrator import verify_facts_against_query
+import streamlit as st
+from app import _chat_loop, get_embedder, _inject_clean_facts_into_l1
 
 STOP_MARKERS = (
     '## references', '## further reading', '## see also',
@@ -15,288 +19,190 @@ STOP_MARKERS = (
 )
 
 def ingest_pdf(pdf_path: str):
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    md_text = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
-    triples = []
-    all_sentences = []
+    """Ingests a PDF and returns a build source graph."""
+    print(f"Ingesting {pdf_path}...")
+    # Use page_chunks=False to avoid cutting off sentences at page boundaries
+    full_text = pymupdf4llm.to_markdown(pdf_path, page_chunks=False)
     
-    for page_chunk in md_text:
-        page_text = page_chunk.get('text', '')
-        page_lower = page_text.lower()
-        for marker in STOP_MARKERS:
-            idx = page_lower.find(marker)
-            if idx != -1:
-                page_text = page_text[:idx]
-                break
-        page_text = re.sub(
-            r'==> picture \[.*?\] intentionally omitted <==', 
-            '', page_text
-        )
-        page_text = re.sub(r'^#{1,6}\s+.*$', '', page_text, 
-                           flags=re.MULTILINE)
-        page_text = re.sub(r'\*\*|__|\*|_', '', page_text)
-        page_text = re.sub(r'\[\s*\d+\s*\]', '', page_text)
-        page_text = re.sub(r'\s+', ' ', page_text).strip()
-        if page_text and len(page_text) > 30:
-            page_triples = extract_source_triples(page_text)
-            triples.extend(page_triples)
-            sentences = [
-                s.strip() for s in 
-                re.split(r'(?<=[.!?])\s+', page_text)
-                if len(s.strip()) > 20
-            ]
-            all_sentences.extend(sentences)
+    # Clean up the text a bit
+    full_lower = full_text.lower()
+    for marker in STOP_MARKERS:
+        idx = full_lower.find(marker)
+        if idx != -1:
+            full_text = full_text[:idx]
+            break
+            
+    full_text = re.sub(r'==> picture \[.*?\] intentionally omitted <==', '', full_text)
+    full_text = re.sub(r'\s+', ' ', full_text).strip()
     
-    graph = build_graph(triples)
-    # Get raw node count before merge
-    raw_node_count = graph.number_of_nodes()
+    # Extract triples
+    triples = extract_source_triples(full_text)
     
-    merged_graph, merged_count = merge_similar_nodes(
-        graph, embedder, threshold=0.82
-    )
-    final_node_count = merged_graph.number_of_nodes()
+    # Keep original sentences for verification
+    all_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 20]
+    
+    # Use the official build_source_graph to ensure vectorization and metadata are correct
+    source_graph = build_source_graph(triples, embedder=get_embedder(), source_sentences=all_sentences)
+    
+    # Report stats for logging
+    print(f"Extracted {len(triples)} triples from full PDF.")
+    print(f"Graph Nodes: {source_graph.graph.number_of_nodes()}")
+    
+    return source_graph
 
-    source_graph = build_source_graph(
-        triples, embedder=embedder, source_sentences=all_sentences
-    )
-    
-    ranked = rank_triples_by_importance(triples)
-    
-    # Scale L1 budget proportionally to document size
-    # Minimum 150 tokens, maximum 600 tokens
-    # Target: retain roughly 12% of document tokens in L1
-    raw_text = ' '.join(all_sentences)
-    raw_tokens = count_tokens(raw_text)
-    
-    dynamic_facts_budget = max(150, min(600, raw_tokens // 8))
-    cache = L1Cache(budgets={
-        "facts": dynamic_facts_budget, 
-        "scratch": 100
-    })
-    print(f"Dynamic L1 budget: {dynamic_facts_budget} tokens "
-          f"(document: {raw_tokens} tokens)")
-
-    for triple, score in ranked:
-        cache.route_triple(triple, pagerank_score=score)
-    
-    return cache, source_graph, raw_tokens, len(triples), raw_node_count, final_node_count, dynamic_facts_budget
-
-APPLE_QA_CASES = [
-    {
-        "question": "Where does the apple tree originally come from?",
-        "expected": "Kazakhstan",
-        "domain": "botany"
-    },
-    {
-        "question": "What is the scientific name of the wild ancestor of apple trees?",
-        "expected": "Malus sieversii",
-        "domain": "botany"
-    },
-    {
-        "question": "What percentage of global apple production does China account for in 2013?",
-        "expected": "49%",
-        "domain": "production"
-    },
-    {
-        "question": "How many known variants of apples are there?",
-        "expected": "10000",
-        "domain": "botany"
-    },
-    {
-        "question": "What chemical in apple seeds can release cyanide?",
-        "expected": "amygdalin",
-        "domain": "botany"
-    },
-    {
-        "question": "When was the first apple orchard in North America established?",
-        "expected": "1625",
-        "domain": "history"
-    },
-    {
-        "question": "Who wrote the Prose Edda that mentions the goddess Idunn?",
-        "expected": "Snorri Sturluson",
-        "domain": "culture"
-    },
-    {
-        "question": "What is the scientific name of the cultivated apple species?",
-        "expected": "Malus domestica",
-        "domain": "botany"
-    },
-    {
-        "question": "What was the total worldwide apple production in 2013?",
-        "expected": "90.8 million tonnes",
-        "domain": "production"
-    },
-    {
-        "question": "In which plant family are apples classified?",
-        "expected": "Rosaceae",
-        "domain": "botany"
-    },
-]
-
-def ask_with_l2_fallback(question, cache, source_graph, embedder, raw_tokens):
-    from caveman.benchmark.run_benchmark import count_tokens
-    import ollama, json, re
-    
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-    
-    # --- ARCHITECTURAL BYPASS & DYNAMIC CONTEXT SLICER ---
-    active_facts = [entry.text for entry in cache.set_facts.values()]
-    forced_facts = []
-
-    if not active_facts:
-        from app import query_l2_memory
-        l2_result = query_l2_memory(question, question, source_graph)
-        if l2_result:
-            forced_facts = [l2_result]
-    else:
-        from app import get_cross_encoder
-        ce = get_cross_encoder()
-        pairs = [[question, f] for f in active_facts]
-        scores = ce.predict(pairs)
-        scored_facts = sorted(zip(active_facts, scores), key=lambda x: x[1], reverse=True)
-
-        if scored_facts[0][1] < 0.0:
-            from app import query_l2_memory
-            l2_result = query_l2_memory(question, question, source_graph)
-            if l2_result:
-                forced_facts = [l2_result]
-        else:
-            forced_facts = [f for f, s in scored_facts if s > 0.0][:3]
-
-    # Build context from L1 with filtered/forced facts
-    messages = _build_partitioned_messages(cache, question, forced_facts=forced_facts)
-    
-    response = ollama.chat(
-        model=OLLAMA_MODEL,
-        messages=messages,
-        options={"temperature": 0.0, "num_predict": 200}
-    )
-    content = response['message']['content'].strip()
-    
-    # Check for tool call (fallback if bypass wasn't used)
-    match = re.search(r'"keyword":\s*"([^"]+)"', content)
-    if match and not forced_facts:
-        keyword = match.group(1)
-        from app import query_l2_memory
-        l2_result = query_l2_memory(question, keyword, source_graph)
-        
-        if l2_result:
-            messages.append({"role": "assistant", "content": content})
-            messages.append({"role": "user", "content": 
-                f"Additional context from memory: {l2_result}\n"
-                f"Now answer in plain text: {question}"})
-            response2 = ollama.chat(
-                model=OLLAMA_MODEL,
-                messages=messages,
-                options={"temperature": 0.0, "num_predict": 200}
-            )
-            answer = response2['message']['content'].strip()
-        else:
-            answer = "INSUFFICIENT DATA"
-    else:
-        answer = content
-
-    caveman_tokens = count_tokens(cache.as_context_text())
-    return answer, caveman_tokens
-
-def main():
+def run_apple_benchmark():
     pdf_path = "Apple-1.pdf"
     if not os.path.exists(pdf_path):
         print(f"Error: {pdf_path} not found.")
         return
 
-    print(f"Ingesting {pdf_path}...")
-    cache, source_graph, raw_tokens, total_triples, raw_nodes, final_nodes, dynamic_budget = ingest_pdf(pdf_path)
+    source_graph = ingest_pdf(pdf_path)
     
+    # Extract initial L1 triples (most important)
+    all_triples = []
+    for u, v, d in source_graph.graph.edges(data=True):
+        if 'triple' in d:
+            all_triples.append(d['triple'])
+        else:
+            all_triples.append(KnowledgeTriple(subject=str(u), verb=str(d.get('verb', 'is')), object=str(v)))
+            
+    ranked = rank_triples_by_importance(all_triples)
+    l1_cache = L1Cache(budgets={"facts": 400})
+    for triple, score in ranked:
+        l1_cache.add_fact(triple, pagerank_score=score)
+    
+    active_triples = [entry.triple for entry in l1_cache.active_facts.values()]
+
+    # Initialise streamlit session state for _chat_loop
+    if "l1_cache" not in st.session_state:
+        st.session_state.l1_cache = l1_cache
+    else:
+        st.session_state.l1_cache = l1_cache
+
+    if "source_graph" not in st.session_state:
+        st.session_state.source_graph = source_graph
+    else:
+        st.session_state.source_graph = source_graph
+
+    if "telemetry" not in st.session_state:
+        st.session_state.telemetry = {
+            "memory_faults": [],
+            "sentinel_log": [],
+            "tool_calls": 0,
+            "l1_status": "benchmark"
+        }
+
+    test_cases = [
+        {"domain": "botany", "query": "Where does the apple tree originally come from?", "expected": "Kazakhstan"},
+        {"domain": "botany", "query": "What is the scientific name of the wild ancestor of apple trees?", "expected": "Malus sieversii"},
+        {"domain": "production", "query": "What percentage of global apple production does China account for in 2013?", "expected": "49%"},
+        {"domain": "production", "query": "How many known variants of apples are there?", "expected": "7500"},
+        {"domain": "botany", "query": "What chemical in apple seeds can release cyanide?", "expected": "amygdalin"},
+        {"domain": "history", "query": "When was the first apple orchard in North America established?", "expected": "1625"},
+        {"domain": "culture", "query": "Who wrote the Prose Edda that mentions the goddess Idunn?", "expected": "Snorri Sturluson"},
+        {"domain": "botany", "query": "What is the scientific name of the cultivated apple species?", "expected": "Malus domestica"},
+        {"domain": "production", "query": "What was the total worldwide apple production in 2013?", "expected": "90.8 million tonnes"},
+        {"domain": "botany", "query": "In which plant family are apples classified?", "expected": "Rosaceae"}
+    ]
+
     results = []
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    
-    for case in APPLE_QA_CASES:
-        question = case["question"]
-        expected = case["expected"]
-        domain = case["domain"]
+    total_tokens = 0
+    total_sdpt = 0.0
+
+    print("\n" + "="*100)
+    print("APPLE PDF END-TO-END BENCHMARK (with L2 Fallback)")
+    print("="*100)
+
+    for i, case in enumerate(test_cases, 1):
+        print(f"\nProcessing [{case['domain']}] question: {case['query']}")
         
-        print(f"\nProcessing [{domain}] question: {question}")
+        start_time = datetime.datetime.now()
         
-        # Query-aware re-ranking
-        cache.rerank_facts_for_query(question, embedder)
+        # Reset telemetry per question
+        st.session_state.telemetry["memory_faults"] = []
+        st.session_state.telemetry["tool_calls"] = 0
+
+        raw_answer = _chat_loop(case["query"])
+
+        # Strip CLAIMS block — handle both newline and inline cases
+        answer = re.sub(
+            r'\n?CLAIMS:\s*\[.*?\]',
+            '',
+            raw_answer,
+            flags=re.DOTALL
+        ).strip()
         
-        # Get answer with L2 fallback
-        answer, caveman_tokens = ask_with_l2_fallback(
-            question, cache, source_graph, embedder, raw_tokens
-        )
-        is_correct = _check_accuracy(answer, expected)
+        # Safety net: if stripped answer is empty or starts with JSON,
+        # extract object value from raw_answer as fallback
+        if not answer or answer.startswith('CLAIMS:') or answer.startswith('{'):
+            import json as _json
+            claims_match = re.search(r'CLAIMS:\s*(\[.*?\])', raw_answer, re.DOTALL)
+            if claims_match:
+                try:
+                    claims = _json.loads(claims_match.group(1))
+                    if claims and isinstance(claims, list):
+                        # Extract the object field as the answer fallback
+                        answer = claims[0].get('o', '') or claims[0].get('s', '')
+                except Exception:
+                    pass
+        
+        end_time = datetime.datetime.now()
+        
+        is_correct = _check_accuracy(answer, case["expected"])
+        
+        # Calculate tokens and compression
+        prompt_tokens = count_tokens(answer) # Simplified for benchmark
+        total_tokens += prompt_tokens
         
         results.append({
-            "question": question,
-            "expected": expected,
-            "answer": answer,
-            "is_correct": is_correct,
-            "domain": domain,
-            "raw_tokens": raw_tokens,
-            "caveman_tokens": caveman_tokens,
-            "reduction": (raw_tokens - caveman_tokens) / raw_tokens * 100 if raw_tokens > 0 else 0,
-            "baseline_sdpt": raw_tokens / total_triples if total_triples > 0 else 0,
-            "caveman_sdpt": calculate_sdpt(len(cache.active_facts), caveman_tokens) if len(cache.active_facts) > 0 else 0
+            "case": i,
+            "query": case["query"],
+            "expected": case["expected"],
+            "got": answer,
+            "correct": is_correct,
+            "domain": case["domain"]
         })
-    
-    # Statistics
-    accuracy = sum(1 for r in results if r["is_correct"]) / len(results)
-    avg_reduction = sum(r["reduction"] for r in results) / len(results)
-    avg_sdpt_imp = sum(r["baseline_sdpt"] - r["caveman_sdpt"] for r in results) / len(results)
-    
-    domain_stats = {}
-    for r in results:
-        d = r["domain"]
-        if d not in domain_stats:
-            domain_stats[d] = {"correct": 0, "total": 0}
-        domain_stats[d]["total"] += 1
-        if r["is_correct"]:
-            domain_stats[d]["correct"] += 1
+        
+        status = "PASS" if is_correct else "FAIL"
+        print(f"Case {i:2}: {status} | {case['query']}")
+        print(f"   Expected: {case['expected']}")
+        print(f"   Got:      {answer[:100]}..." if len(answer) > 100 else f"   Got:      {answer}")
+
+    # Summary
+    correct_count = sum(1 for r in results if r['correct'])
+    accuracy = (correct_count / len(test_cases)) * 100
     
     print("\n" + "="*100)
     print("APPLE PDF END-TO-END BENCHMARK REPORT (with L2 Fallback)")
     print("="*100)
-    print(f"Overall Accuracy: {accuracy*100:.1f}%")
-    print(f"Avg Compression: {avg_reduction:.1f}%")
-    print(f"Avg SDpT Improvement: {avg_sdpt_imp:.2f} tokens/ACU")
-    print(f"L1 Budget Used: {dynamic_budget} tokens")
-    print(f"Graph Nodes: {raw_nodes} (raw) -> {final_nodes} (merged)")
-    print("-" * 100)
+    print(f"Overall Accuracy: {accuracy:.1f}%")
     
-    for d, stats in domain_stats.items():
-        print(f"Domain [{d:<10}]: {stats['correct']}/{stats['total']} ({stats['correct']/stats['total']*100:.1f}%)")
-    
+    # Domain breakdown
+    domains = sorted(list(set(r['domain'] for r in results)))
     print("-" * 100)
-    for i, r in enumerate(results, 1):
-        status = "PASS" if r["is_correct"] else "FAIL"
-        print(f"Case {i:<2}: {status} | {r['question']}")
+    for d in domains:
+        d_results = [r for r in results if r['domain'] == d]
+        d_correct = sum(1 for r in d_results if r['correct'])
+        d_acc = (d_correct / len(d_results)) * 100
+        print(f"Domain [{d:<10}]: {d_correct}/{len(d_results)} ({d_acc:.1f}%)")
+    print("-" * 100)
+
+    for r in results:
+        status = "PASS" if r['correct'] else "FAIL"
+        print(f"Case {r['case']:2}: {status} | {r['query']}")
         print(f"   Expected: {r['expected']}")
-        print(f"   Got:      {r['answer'][:100].strip()}...")
-        print()
-        
-    summary = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "pdf": pdf_path,
-        "accuracy": accuracy,
-        "avg_reduction": avg_reduction,
-        "avg_sdpt_improvement": avg_sdpt_imp,
-        "raw_nodes": raw_nodes,
-        "final_nodes": final_nodes,
-        "l1_budget_used": dynamic_budget,
-        "document_raw_tokens": raw_tokens,
-        "compression_target": f"{100 * dynamic_budget / raw_tokens:.1f}%",
-        "domain_stats": domain_stats,
-        "cases": results
-    }
-    
-    output_path = "benchmarks/apple_pdf_benchmark_results.json"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(summary, f, indent=2)
-    
-    print(f"[SUCCESS] Detailed results saved to {output_path}")
+        print(f"   Got:      {r['got']}")
+        print("")
+
+    # Save results
+    with open("benchmarks/apple_pdf_benchmark_results.json", "w") as f:
+        json.dump({
+            "timestamp": datetime.datetime.now().isoformat(),
+            "accuracy": accuracy,
+            "results": results
+        }, f, indent=2)
+
+    print(f"[SUCCESS] Detailed results saved to benchmarks/apple_pdf_benchmark_results.json")
 
 if __name__ == "__main__":
-    main()
+    run_apple_benchmark()

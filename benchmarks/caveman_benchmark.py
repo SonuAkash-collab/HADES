@@ -15,6 +15,8 @@ from sentinel.core.verifier import verify_claim
 from sentinel.core.wiki_storage import load_wiki, save_verified_fact
 from shared.extractor import extract_claim_triples, extract_source_triples
 from shared.triple import KnowledgeTriple
+from typing import Callable
+from caveman.core.semantic_arbitrator import verify_facts_against_query
 
 
 DATASET: list[dict[str, str]] = [
@@ -94,193 +96,144 @@ DATASET: list[dict[str, str]] = [
 
 
 from app import get_embedder
-from sklearn.metrics.pairwise import cosine_similarity
-
-def query_l2_memory(keyword: str, source_graph) -> str:
+def fetch_triples_from_l2(keyword: str, source_graph) -> list[KnowledgeTriple]:
+    """
+    HADES Revolution: Retrieve both structured KnowledgeTriples AND source sentences 
+    from the L2 index to catch facts missed by REBEL (especially numeric/technical data).
+    """
     if source_graph is None or not keyword:
-        return ""
+        return []
 
-    embedder = get_embedder()
-    keyword_vector = embedder.encode(keyword)
-    graph = source_graph.graph
+    from app import query_l2_memory
+    # Reuse the production L2 retrieval logic which already blends triples and sentences
+    l2_prose = query_l2_memory(keyword, keyword, source_graph)
+    if not l2_prose:
+        return []
 
-    best_node = None
-    best_score = -1.0
-
-    for node, data in graph.nodes(data=True):
-        if "vector" in data and data["vector"] is not None:
-            node_vector = data["vector"]
-            sim = cosine_similarity([keyword_vector], [node_vector])[0][0]
-            if sim > best_score:
-                best_score = sim
-                best_node = node
-
-    if best_score < 0.60 or best_node is None:
-        return ""
-
-    edge_lines: list[str] = []
-    seen_edges: set[tuple[str, str, str]] = set()
-
-    for subject, obj, data in graph.out_edges(best_node, data=True):
-        verb = str((data or {}).get("verb", "")).strip()
-        edge_key = (str(subject), verb, str(obj))
-        if edge_key not in seen_edges:
-            seen_edges.add(edge_key)
-            edge_lines.append(f"{subject} {verb} {obj}".strip())
-
-    for subject, obj, data in graph.in_edges(best_node, data=True):
-        verb = str((data or {}).get("verb", "")).strip()
-        edge_key = (str(subject), verb, str(obj))
-        if edge_key not in seen_edges:
-            seen_edges.add(edge_key)
-            edge_lines.append(f"{subject} {verb} {obj}".strip())
-
-    return " | ".join(edge_lines)
+    # Map the retrieved prose lines back to KnowledgeTriple objects for the verification gate
+    triples: list[KnowledgeTriple] = []
+    for line in l2_prose.split("\n"):
+        if not line.strip():
+            continue
+        # Create a "pseudo-triple" for the source sentence
+        triples.append(KnowledgeTriple(
+            subject="Source Document",
+            verb="states",
+            object=line.strip(),
+            extraction_method="l2_fallback",
+            is_deterministic=True
+        ))
+    return triples
 
 
-def query_l3_wiki(keyword: str) -> str:
-    tokens = {token.lower() for token in keyword.split() if token.strip()}
-    if not tokens:
-        return ""
 
-    matched_facts: list[str] = []
-    for fact in load_wiki():
-        fact_text = " ".join(
-            [
-                str(fact.get("subject", "")),
-                str(fact.get("verb", "")),
-                str(fact.get("object", "")),
-            ]
-        ).strip()
-        if fact_text and any(token in fact_text.lower() for token in tokens):
-            matched_facts.append(fact_text)
+def os_generate_response(
+    user_query: str, 
+    l1_cache_facts: list[KnowledgeTriple], 
+    l2_fetch_callback: Callable[[str], list[KnowledgeTriple]]
+) -> str:
+    """Orchestrates the response generation using the verified hardware gate."""
+    import ollama
+    OLLAMA_MODEL = "qwen2.5:1.5b"
+    
+    # 1. L1 Lookup - Modern HADES threshold (0.50 for MS-MARCO Cross-Encoder)
+    from caveman.core.semantic_arbitrator import _sigmoid, _load_cross_encoder
+    model = _load_cross_encoder()
+    fact_texts = [f.as_text() for f in l1_cache_facts]
+    if fact_texts:
+        pairs = [[user_query, text] for text in fact_texts]
+        raw_scores = model.predict(pairs)
+        normalized_scores = _sigmoid(raw_scores)
+        if isinstance(normalized_scores, float): normalized_scores = [normalized_scores]
+        
+        print(f"\n[L1 VERIFY] Query: {user_query}")
+        for f, s in zip(l1_cache_facts, normalized_scores):
+            print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
 
-    return " ".join(matched_facts)
+    verified_facts = verify_facts_against_query(user_query, l1_cache_facts, threshold=0.50)
+    
+    # 2. Page Fault (L2 Fallback)
+    if not verified_facts:
+        l2_facts = l2_fetch_callback(user_query)
+        if l2_facts:
+            fact_texts = [f.as_text() for f in l2_facts]
+            pairs = [[user_query, text] for text in fact_texts]
+            raw_scores = model.predict(pairs)
+            normalized_scores = _sigmoid(raw_scores)
+            if isinstance(normalized_scores, float): normalized_scores = [normalized_scores]
+            print(f"\n[L2 VERIFY] Query: {user_query}")
+            for f, s in zip(l2_facts, normalized_scores):
+                print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
+        
+        verified_facts = verify_facts_against_query(user_query, l2_facts, threshold=0.50)
 
-
-def _extract_keyword(tool_call) -> str:
-    raw_arguments = getattr(getattr(tool_call, "function", None), "arguments", "")
-    if not raw_arguments:
-        return ""
-
+        
+    # 3. Execution Block (No Knowledge)
+    if not verified_facts:
+        return "SYSTEM ERROR: I do not have enough verified context."
+        
+    # 4. Text Rendering
+    facts_text = "\n".join([f"- {t.as_text()} [Confidence: {s:.2f}]" for t, s in verified_facts])
+    
+    SYSTEM_PROMPT = (
+        "You are a highly restricted text formatting engine. Answer the user's query "
+        "using ONLY the provided 'System Facts'. DO NOT add external knowledge. "
+        "If the facts are insufficient, output 'SYSTEM ERROR'."
+    )
+    
+    prompt = f"System Facts:\n{facts_text}\n\nUser Query: {user_query}"
+    
     try:
-        payload = json.loads(raw_arguments)
-    except json.JSONDecodeError:
-        return ""
+        response = ollama.chat(
+            model=OLLAMA_MODEL, 
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            options={"temperature": 0.0}
+        )
+        return response.get('message', {}).get('content', '').strip()
+    except Exception as e:
+        return f"SYSTEM ERROR: {str(e)}"
 
-    keyword = payload.get("keyword") if isinstance(payload, dict) else ""
-    return str(keyword or "").strip()
 
-
-def ask_judge(caveman_context: str, question: str, source_graph) -> str:
+def ask_judge(caveman_context: str, l1_facts: list[KnowledgeTriple], question: str, source_graph) -> str:
     print("\n" + "=" * 100)
-    print("L1 CONTEXT GENERATED")
+    print("L1 CONTEXT GENERATED (Caveman Prose)")
     print("=" * 100)
     print(caveman_context)
 
-    SYSTEM_INSTRUCTION = """You are the NMMU (Neural Memory Management Unit), a strict hardware instruction decoder. You do not converse. You do not explain your thoughts. 
+    # Revolution: Use triples directly instead of re-extracting from condensed prose
+    def l2_callback(query: str):
+        return fetch_triples_from_l2(query, source_graph)
 
-You have two operating modes. You must output ONLY ONE of the following:
-
-MODE 1: CACHE HIT (Answer Synthesis)
-If the L1 Cache (Context) contains the answer to the user's query, output the final answer directly.
-
-MODE 2: CACHE MISS (Memory Fault)
-If the answer is NOT in the L1 Cache, you MUST trigger an L2 Page Fault by outputting STRICTLY a JSON object matching this schema. Do not output any text before or after the JSON:
-{
-    "tool": "search_memory",
-    "keyword": "exact_semantic_keyword_to_search"
-}"""
-
-    conversation: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": SYSTEM_INSTRUCTION,
-        },
-        {
-            "role": "user",
-            "content": f"Context: {caveman_context}\nQuestion: {question}",
-        },
-    ]
-
-    response = ollama.chat(model='qwen2.5:1.5b', messages=conversation)
-    content = response.get('message', {}).get('content', '').strip()
-
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, dict) and parsed.get("tool") == "search_memory":
-            keyword = str(parsed.get("keyword", "")).strip()
-            print("\n" + "=" * 100)
-            print("TOOL CALL TRIGGERED")
-            print("=" * 100)
-            print(f"Tool: search_memory | Keyword: {keyword or '<empty>'}")
-
-            l2_result = query_l2_memory(keyword, source_graph)
-            if l2_result:
-                memory_result = f"L2 HIT: {l2_result}"
-                print("\n" + "=" * 100)
-                print("MEMORY HIT (L2)")
-                print("=" * 100)
-                print(memory_result)
-            else:
-                l3_result = query_l3_wiki(keyword)
-                if l3_result:
-                    memory_result = f"L3 HIT: {l3_result}"
-                    print("\n" + "=" * 100)
-                    print("MEMORY HIT (L3)")
-                    print("=" * 100)
-                    print(memory_result)
-                else:
-                    memory_result = "No matching memory found in L2 or L3."
-                    print("\n" + "=" * 100)
-                    print("MEMORY HIT (L2/L3)")
-                    print("=" * 100)
-                    print(memory_result)
-
-            conversation.append({"role": "assistant", "content": content})
-            conversation.append({"role": "user", "content": f"TOOL RESULT: {memory_result}"})
-
-            final_response = ollama.chat(model='qwen2.5:1.5b', messages=conversation)
-            final_answer = final_response.get('message', {}).get('content', '').strip()
-        else:
-            final_answer = content
-    except json.JSONDecodeError:
-        final_answer = content
+    final_answer = os_generate_response(
+        user_query=question,
+        l1_cache_facts=l1_facts,
+        l2_fetch_callback=l2_callback
+    )
 
     print("\n" + "=" * 100)
     print("FINAL ANSWER")
     print("=" * 100)
     print(final_answer)
-
-    # Step 1: Add LLM answer to SCRATCH (dirty content)
-    # In the benchmark we don't have a live cache object,
-    # so we simulate the SCRATCH flush directly.
-    dirty_entries = [final_answer]
     
-    # Step 2: Extract claim triples from dirty SCRATCH content
-    # Use extract_claim_triples (GLiNER) for LLM output,
-    # not extract_source_triples (spaCy) which is for source docs
+    # Sentinel Write-Back Gate
     from shared.extractor import extract_claim_triples
     dirty_triples = extract_claim_triples(final_answer)
     
-    print("\n" + "=" * 100)
-    print("SENTINEL WRITE-BACK GATE (SCRATCH FLUSH)")
-    print("=" * 100)
-    
-    if not dirty_triples:
-        print("No verifiable triples extracted from SCRATCH content.")
-        return final_answer
-    
-    for triple in dirty_triples:
-        result = verify_claim(triple, source_graph, 
-                              source_sentences=source_graph.source_sentences)
-        status = "CLEAN" if result.is_verified else "DIRTY"
-        print(f"[{status}]: [{triple.as_text()}] -- {result.label}")
-        if result.is_verified:
-            save_verified_fact(triple)
-        # Dirty triples are discarded — not written to L3
+    if dirty_triples:
+        print("\n" + "=" * 100)
+        print("SENTINEL WRITE-BACK GATE")
+        print("=" * 100)
+        for triple in dirty_triples:
+            result = verify_claim(triple, source_graph, 
+                                  source_sentences=source_graph.source_sentences)
+            status = "CLEAN" if result.is_verified else "DIRTY"
+            print(f"[{status}]: [{triple.as_text()}] -- {result.label}")
 
     return final_answer
+
 
 
 def _check_accuracy(answer: str, expected: str) -> bool:
@@ -306,10 +259,12 @@ def _check_accuracy(answer: str, expected: str) -> bool:
         return True
 
     # Tier 3: numeric equivalence — handles "$22B" matching "22 billion"
-    # Extract all numbers from both strings and check overlap
+    # Extract all numbers from both strings and check overlap (ignoring commas)
     import re as _re
-    answer_nums = set(_re.findall(r'\d+', answer_lower))
-    expected_nums = set(_re.findall(r'\d+', expected_lower))
+    answer_no_commas = answer_lower.replace(',', '')
+    expected_no_commas = expected_lower.replace(',', '')
+    answer_nums = set(_re.findall(r'\d+', answer_no_commas))
+    expected_nums = set(_re.findall(r'\d+', expected_no_commas))
     if expected_nums and expected_nums.issubset(answer_nums):
         # At least one significant word also matches
         significant = [w for w in expected_words if not w.isdigit() and len(w) > 3]
@@ -334,15 +289,15 @@ def _check_accuracy(answer: str, expected: str) -> bool:
                 if not remaining or all(w in answer_lower for w in remaining):
                     return True
 
-    # Tier 5: Proper name partial match
-    # Handles "Collins" correctly matching "Michael Collins"
-    # Accepts if ANY significant name component appears in answer
+    # Tier 5: Proper name match
+    # Handles "Snorri Sturluson" correctly.
+    # Requires ALL parts of the expected name to be present.
     expected_name_parts = [
         w for w in expected_lower.split()
         if len(w) > 3 and w.isalpha()
     ]
     if expected_name_parts:
-        if any(part in answer_lower for part in expected_name_parts):
+        if all(part in answer_lower for part in expected_name_parts):
             return True
 
     return False
@@ -393,7 +348,7 @@ def main() -> int:
         reduction = ((raw_tokens - caveman_tokens) / raw_tokens * 100.0) if raw_tokens else 0.0
         sdpt_value = calculate_sdpt(len(cached_triples), caveman_tokens) if caveman_tokens > 0 else 0.0
 
-        answer = ask_judge(caveman_text, question, source_graph)
+        answer = ask_judge(caveman_text, cached_triples, question, source_graph)
         is_correct = _check_accuracy(answer, expected)
 
         rows.append(
@@ -436,7 +391,7 @@ def main() -> int:
     results_summary = {
         "timestamp": datetime.datetime.now().isoformat(),
         "model": "qwen2.5:1.5b",
-        "extractor": "spaCy (source) + GLiNER-relex (claims)",
+        "extractor": "REBEL (source) + Cerberus (verification)",
         "total_cases": len(rows),
         "accuracy": sum(1 for r in rows if r["accuracy"]) / len(rows),
         "avg_compression_ratio": sum(r["reduction"] for r in rows) / len(rows),

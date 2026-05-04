@@ -26,7 +26,7 @@ def _is_valid_entity(label: str) -> bool:
     label = label.strip()
     
     # Hard length limits
-    if len(label) > 40:
+    if len(label) > 100:
         return False
     if len(label) < 2:
         return False
@@ -83,11 +83,14 @@ def _is_valid_entity(label: str) -> bool:
         "of ", "for ", "into ", "from ", "with ", "by ",
         "to ", "in ", "on ", "at ", "as ",
         "simply ", "only ", "also ", "just ", "more ",
-        "around ", "unlike ", "the earliest", "unlike ",
+        "around ", "unlike ", "unlike ",
         "most of ", "many of ", "some of ", "all of ",
     )
     if any(lower.startswith(p) for p in PREP_STARTS):
-        return False
+        # Only reject if the label is short (likely a fragment)
+        # If it's long, it's probably a descriptive fact object
+        if len(label) < 20:
+            return False
     
     # Citation template artifacts
     if "{" in label or "|" in label or "cite" in label.lower():
@@ -179,42 +182,35 @@ def rank_triples_by_importance(triples: Iterable[KnowledgeTriple]) -> list[tuple
         score = scores.get(triple.subject, 0.0) + scores.get(triple.object, 0.0)
         ranked_with_scores.append((triple, score))
     
-    # Boost triples based on semantic class (Named Entity Recognition)
-    # Uses a relative multiplier (2.0x) to respect organic graph connectivity
-    # while strongly highlighting critical factual anchors.
     nlp = _load_spacy_sm()
-    boosted_ranked = []
-    
-    # Categories that act as universal factual anchors
     BOOST_CATEGORIES = {"PERSON", "GPE", "ORG", "DATE", "PERCENT", "QUANTITY"}
-    
-    for triple, score in ranked_with_scores:
-        subject_doc = nlp(triple.subject)
-        object_doc = nlp(triple.object)
-        
+
+    # Batch encode all subjects and objects in one pass
+    subjects = [triple.subject for triple, _ in ranked_with_scores]
+    objects  = [triple.object  for triple, _ in ranked_with_scores]
+    all_texts = subjects + objects
+    all_docs  = list(nlp.pipe(all_texts, batch_size=64))
+    subject_docs = all_docs[:len(subjects)]
+    object_docs  = all_docs[len(subjects):]
+
+    boosted_ranked = []
+    for i, (triple, score) in enumerate(ranked_with_scores):
+        sdoc = subject_docs[i]
+        odoc = object_docs[i]
         has_entity_boost = False
-        for doc in [subject_doc, object_doc]:
-            # Additive boost (0.1) ensures entities leapfrog generic facts
-            # regardless of base PageRank.
+        for doc in [sdoc, odoc]:
             if any(ent.label_ in BOOST_CATEGORIES for ent in doc.ents):
-                score += 0.1 
+                score += 0.1
                 has_entity_boost = True
                 break
-        
-        # Fallback for proper nouns that might miss NER
         if not has_entity_boost:
-            for doc in [subject_doc, object_doc]:
-                if any(t.pos_ == 'PROPN' for t in doc):
-                    score += 0.05 
+            for doc in [sdoc, odoc]:
+                if any(t.pos_ == "PROPN" for t in doc):
+                    score += 0.05
                     break
-                    
         boosted_ranked.append((triple, score))
 
-    return sorted(
-        boosted_ranked,
-        key=lambda item: item[1],
-        reverse=True,
-    )
+    return sorted(boosted_ranked, key=lambda item: item[1], reverse=True)
 
 
 def merge_similar_nodes(

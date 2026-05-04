@@ -21,44 +21,62 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 
 
+_EMBEDDER = None
+_CROSS_ENCODER = None
+
 @st.cache_resource
-def get_embedder():
+def _get_embedder_cached():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
-
 @st.cache_resource
-def get_cross_encoder():
+def _get_cross_encoder_cached():
     return CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
+def get_embedder():
+    global _EMBEDDER
+    if st.runtime.exists():
+        return _get_embedder_cached()
+    if _EMBEDDER is None:
+        _EMBEDDER = SentenceTransformer('all-MiniLM-L6-v2')
+    return _EMBEDDER
 
-st.set_page_config(
-    layout="wide",
-    page_title="HADES",
-    page_icon="🧠",
-    initial_sidebar_state="expanded",
-)
+def get_cross_encoder():
+    global _CROSS_ENCODER
+    if st.runtime.exists():
+        return _get_cross_encoder_cached()
+    if _CROSS_ENCODER is None:
+        _CROSS_ENCODER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+    return _CROSS_ENCODER
 
 
-SYSTEM_INSTRUCTION = """You are the HADES NMMU (Neural Memory Management Unit), a strict hardware instruction decoder. 
-You do not converse. You do not explain your thoughts. 
+if st.runtime.exists():
+    st.set_page_config(
+        layout="wide",
+        page_title="HADES",
+        page_icon="🧠",
+        initial_sidebar_state="expanded",
+    )
 
-You have two operating modes. You MUST output ONLY the mode's payload.
 
-1. CACHE HIT (Answer Synthesis):
-   If the L1 Cache (Context) contains the answer, output the final answer directly in plain text.
-   
-2. CACHE MISS (Memory Fault):
-   If the answer is NOT in the L1 Cache, you MUST trigger an L2 Page Fault by outputting STRICTLY a JSON object matching this schema:
-   {
-       "tool": "search_memory",
-       "keyword": "exact_semantic_keyword_to_search"
-   }
+SYSTEM_INSTRUCTION = """You are the HADES NMMU. Answer questions using the provided Facts.
 
-Constraints:
-- You MUST answer based ONLY on the provided Facts.
-- For CACHE HIT, output ONLY the plain text answer.
-- For CACHE MISS, output ONLY the JSON object.
-- DO NOT output any text before or after the JSON."""
+MODE 1 — CACHE HIT:
+  Use this if the Facts contain the answer. 
+  Example:
+  The apple tree originates from Kazakhstan.
+  CLAIMS: [{"s": "apple tree", "v": "originates from", "o": "Kazakhstan"}]
+
+MODE 2 — CACHE MISS:
+  Use this if the Facts do not contain the answer. Output ONLY this JSON:
+  {"tool": "search_memory", "keyword": "search_term"}
+
+Rules:
+1. Answer ONLY using the provided Facts.
+2. If Facts are insufficient, you MUST use MODE 2.
+3. Prose answer must come BEFORE the CLAIMS line.
+4. NEVER repeat the user's question. If you don't know, use MODE 2.
+5. Combine information from multiple facts if necessary to deduce the answer.
+6. If still no answer after searching, say 'INSUFFICIENT DATA'."""
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 OLLAMA_OPTIONS = {
@@ -223,16 +241,40 @@ def _is_single_word_reply(text: str) -> bool:
 
 
 def _extract_search_keyword(content: str) -> str | None:
+    # Use regex to find the JSON block in case the model added conversational text
+    match = re.search(r'(\{.*?"tool"\s*:\s*"search_memory".*?\})', content, re.DOTALL)
+    if not match:
+        return None
+    
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(match.group(1))
+        if not isinstance(parsed, dict) or parsed.get("tool") != "search_memory":
+            return None
+        keyword = str(parsed.get("keyword", "")).strip()
+        if not keyword:
+            return None
+        
+        # Simplify long keywords to their core entity/value
+        # Strip common question prefixes that dilute the embedding
+        import re as _re_kw
+        simplifications = [
+            (r'^(the|a|an)\s+', ''),
+            (r'\s+(scientific name|common name)\s*', ' '),
+            (r'^(origin|source|location)\s+of\s+', ''),
+            (r'^(author|writer|creator)\s+of\s+', ''),
+            (r'\s+mentioning\s+.*$', ''),
+        ]
+        simplified = keyword.lower().strip()
+        for pattern, replacement in simplifications:
+            simplified = _re_kw.sub(pattern, replacement, simplified, flags=_re_kw.IGNORECASE).strip()
+        
+        # Use simplified version only if it's meaningfully shorter
+        # and not empty
+        if simplified and len(simplified) < len(keyword) * 0.75:
+            return simplified
+        return keyword
     except json.JSONDecodeError:
         return None
-
-    if not isinstance(parsed, dict) or parsed.get("tool") != "search_memory":
-        return None
-
-    keyword = str(parsed.get("keyword", "")).strip()
-    return keyword or None
 
 
 def _build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[str] = None) -> list[dict[str, str]]:
@@ -315,73 +357,61 @@ def _call_policy_model(messages: list[dict[str, str]]) -> str:
     content = response.get("message", {}).get("content", "").strip()
     
     # Robust sanitation: remove any mode-locking prefixes
-    content = re.sub(r"^(MODE \d:|CACHE (HIT|MISS)( \(Memory Fault\))?:)", "", content, flags=re.IGNORECASE).strip()
+    content = re.sub(r"^(MODE\s*\d.*?CACHE\s*HIT\s*:\s*|MODE\s*\d.*?:\s*|CACHE\s*(HIT|MISS).*?:\s*)", "", content, flags=re.IGNORECASE).strip()
     return content
 
 
 def query_l2_memory(query: str, keyword: str, source_graph) -> str:
     """
-    Search L2 memory using a Bi-Encoder for retrieval and a 
-    Cross-Encoder for precise semantic arbitration.
+    Search L2 memory using triple-content vector index.
+    
+    Architecture: Two-stage retrieval.
+      Stage 1 (Bi-Encoder): Cosine similarity between query and pre-embedded
+               triple texts (e.g. "Apple parent taxon Rosaceae").
+               This replaces the old node-label search which compared queries
+               against short strings like "Rosaceae" that had poor similarity.
+      Stage 2 (Cross-Encoder): Re-rank top candidates for precise arbitration.
     """
     if source_graph is None or not keyword:
         return ""
 
+    triple_index = getattr(source_graph, 'triple_index', None)
+    if not triple_index:
+        return ""
+
     embedder = get_embedder()
-    keyword_vector = embedder.encode(keyword)
-    graph = source_graph.graph
+    query_vector = embedder.encode(query)
 
-    # Step A: Bi-Encoder Fetch (Top 5 Candidates)
-    node_scores = []
-    for node, data in graph.nodes(data=True):
-        if "vector" in data and data["vector"] is not None:
-            node_vector = data["vector"]
-            sim = cosine_similarity([keyword_vector], [node_vector])[0][0]
-            node_scores.append((node, sim))
-    
-    # Sort and take top 5
-    top_nodes = sorted(node_scores, key=lambda x: x[1], reverse=True)[:5]
-    
-    if not top_nodes or top_nodes[0][1] < 0.60: # Threshold reverted to 0.60
+    # Stage 1: Bi-Encoder — search triple-content vectors
+    scored_triples = []
+    for entry in triple_index:
+        if entry["vector"] is not None:
+            sim = cosine_similarity([query_vector], [entry["vector"]])[0][0]
+            scored_triples.append((entry["text"], sim))
+
+    # Sort by similarity, take top 15 candidates for cross-encoder
+    scored_triples.sort(key=lambda x: x[1], reverse=True)
+    top_candidates = scored_triples[:15]
+
+    if not top_candidates or top_candidates[0][1] < 0.25:
         return ""
 
-    candidate_facts = []
-    for node, _ in top_nodes:
-        # Collect facts from both out-edges and in-edges for the node
-        for subject, obj, data in list(graph.out_edges(node, data=True)) + list(graph.in_edges(node, data=True)):
-            verb = str((data or {}).get("verb", "is")).strip()
-            fact = f"{subject} {verb} {obj}".strip()
-            if fact not in candidate_facts:
-                candidate_facts.append(fact)
+    candidate_facts = [text for text, _ in top_candidates]
 
-    if not candidate_facts:
-        return ""
-
-    # Step D: Cross-Encoder Scoring & Arbitration
+    # Stage 2: Cross-Encoder re-ranking
     cross_encoder = get_cross_encoder()
     pairs = [[query, fact] for fact in candidate_facts]
     scores = cross_encoder.predict(pairs)
-    
-    # Tiebreaker: if query contains digits, boost candidates that also contain those digits
-    # only when scores are within 0.05 of each other.
-    import re
-    query_digits = re.findall(r'\d+', keyword)
-    if query_digits:
-        def _digit_score(text: str) -> int:
-            return sum(1 for d in query_digits if d in text)
-        
-        best_idx = max(
-            range(len(candidate_facts)),
-            key=lambda i: (
-                round(scores[i] * 20), # Bucket by 0.05
-                _digit_score(candidate_facts[i]),
-                scores[i]
-            )
-        )
-    else:
-        best_idx = scores.argmax()
 
-    return candidate_facts[best_idx]
+    scored_candidates = sorted(
+        zip(candidate_facts, scores),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    # Return top 3 facts as context
+    top_facts = [fact for fact, score in scored_candidates[:3]]
+    return "\n".join(top_facts)
 
 
 def query_l3_wiki(keyword: str) -> str:
@@ -463,31 +493,32 @@ def process_pdf(file) -> tuple[int, int]:
         # Clean markdown artifacts
         # Remove picture placeholders
         page_text = _re.sub(r'==> picture \[.*?\] intentionally omitted <==', '', page_text)
+        raw_markdown = page_text  # keep headers for triple extraction
+        
         # Remove headers (## Apple, ### Botanical information)
-        page_text = _re.sub(r'^#{1,6}\s+.*$', '', page_text,
-                             flags=_re.MULTILINE)
+        clean_text = _re.sub(r'^#{1,6}\s+.*$', '', page_text, flags=_re.MULTILINE)
         # Remove bold/italic markers
-        page_text = _re.sub(r'\*\*|__|\*|_', '', page_text)
+        clean_text = _re.sub(r'\*\*|__|\*|_', '', clean_text)
         # Remove citation markers
-        page_text = _re.sub(r'\[\s*\d+\s*\]', '', page_text)
+        clean_text = _re.sub(r'\[\s*\d+\s*\]', '', clean_text)
         # Remove image references
-        page_text = _re.sub(r'!\[.*?\]\(.*?\)', '', page_text)
+        clean_text = _re.sub(r'!\[.*?\]\(.*?\)', '', clean_text)
         # Normalise whitespace
-        page_text = _re.sub(r'\s+', ' ', page_text).strip()
+        clean_text = _re.sub(r'\s+', ' ', clean_text).strip()
 
-        if not page_text or len(page_text) < 30:
+        if not clean_text or len(clean_text) < 30:
             continue
 
         # Extract sentences for Cerberus source_sentences
         page_sentences = [
             s.strip() for s in
-            _re.split(r'(?<=[.!?])\s+', page_text)
+            _re.split(r'(?<=[.!?])\s+', clean_text)
             if len(s.strip()) > 20
         ]
         all_sentences.extend(page_sentences)
 
-        # Extract triples from clean body text
-        page_triples = extract_source_triples(page_text)
+        # Extract triples from raw markdown text
+        page_triples = extract_source_triples(raw_markdown)
         triples.extend(page_triples)
 
         for triple in page_triples:
@@ -692,7 +723,28 @@ def _run_sentinel_writeback(final_answer: str) -> bool:
         _push_telemetry_item("sentinel_log", "No source graph loaded; Sentinel verification skipped.")
         return True
 
-    answer_triples = extract_claim_triples(final_answer)
+    import re as _re
+    import json
+    answer_triples = []
+    claims_match = _re.search(r'CLAIMS:\s*(\[.*?\])', final_answer, _re.DOTALL)
+    if claims_match:
+        try:
+            raw_claims = json.loads(claims_match.group(1))
+            for c in raw_claims:
+                if isinstance(c, dict) and c.get("s") and c.get("v") and c.get("o"):
+                    answer_triples.append(KnowledgeTriple(
+                        subject=str(c["s"]).strip(),
+                        verb=str(c["v"]).strip(),
+                        object=str(c["o"]).strip(),
+                        extraction_method="llm_structured",
+                        is_deterministic=True,
+                    ))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # Fallback to spaCy if model didn't emit CLAIMS
+    if not answer_triples:
+        from shared.extractor import _extract_svo_triples
+        answer_triples = _extract_svo_triples(final_answer)
     if not answer_triples:
         _push_telemetry_item("sentinel_log", "No triples extracted from assistant answer.")
         return True
@@ -739,74 +791,69 @@ def _chat_loop(prompt: str) -> str:
     _inject_clean_facts_into_l1(cache)
     cache.add_history_turn("user", prompt)
 
-    # --- ARCHITECTURAL BYPASS & DYNAMIC CONTEXT SLICER ---
+    # --- L1/L2 JOINT RETRIEVAL ---
     active_facts = [entry.text for entry in cache.set_facts.values()]
-    forced_facts = []
+    l2_result = query_l2_memory(prompt, prompt, source_graph)
+    l2_facts = l2_result.split("\n") if l2_result else []
 
-    if not active_facts:
-        # Automatically trigger L2 if L1 is empty
-        l2_result = query_l2_memory(prompt, prompt, source_graph)
-        if l2_result:
-            forced_facts = [l2_result]
-            _push_telemetry_item("memory_faults", f"AUTO L2 HIT (Empty L1) | {l2_result}")
+    if not active_facts and not l2_facts:
+        forced_facts = []
+    elif not active_facts:
+        forced_facts = l2_facts
     else:
+        combined = list(set(active_facts + l2_facts))
         ce = get_cross_encoder()
-        pairs = [[prompt, f] for f in active_facts]
+        pairs = [[prompt, f] for f in combined]
         scores = ce.predict(pairs)
-        scored_facts = sorted(zip(active_facts, scores), key=lambda x: x[1], reverse=True)
-
-        if scored_facts[0][1] < 0.0:
-            # GATEKEEPER: No relevant fact in L1. Force L2 search.
-            l2_result = query_l2_memory(prompt, prompt, source_graph)
-            if l2_result:
-                forced_facts = [l2_result]
-                _push_telemetry_item("memory_faults", f"GATEKEEPER BYPASS -> L2 HIT | {l2_result}")
-            else:
-                forced_facts = []
-                _push_telemetry_item("memory_faults", "GATEKEEPER BYPASS -> L2 MISS")
-        else:
-            # SLICER: Keep only relevant facts, max 3.
-            forced_facts = [f for f, s in scored_facts if s > 0.0][:3]
-            _push_telemetry_item("memory_faults", f"SLICER ACTIVE: {len(forced_facts)} facts kept")
+        scored_facts = sorted(zip(combined, scores), key=lambda x: x[1], reverse=True)
+        forced_facts = [f for f, s in scored_facts[:5]]
 
     conversation = _build_partitioned_messages(cache, prompt, forced_facts=forced_facts)
     content = _call_policy_model(conversation)
     
-    # Traditional tool-call handling is now a fallback
+    # Allow the model to 're-search' if it detects a context gap
     keyword = _extract_search_keyword(content)
-    if keyword and not forced_facts: # Only if we didn't already bypass
-        st.session_state.telemetry["tool_calls"] = st.session_state.telemetry.get("tool_calls", 0) + 1
-        l2_result = query_l2_memory(prompt, keyword, source_graph)
-        if l2_result:
-            tool_output = l2_result
-            fault_line = f"L2 HIT | keyword='{keyword}' | {l2_result}"
-        else:
-            l3_result = query_l3_wiki(keyword)
-            if l3_result:
-                tool_output = l3_result
-                fault_line = f"L3 HIT | keyword='{keyword}' | {l3_result}"
+    if keyword:
+        # Check if we already searched for this exact keyword in this turn to avoid loops
+        already_searched = any(
+            isinstance(item, dict) and item.get("keyword") == keyword 
+            for item in st.session_state.telemetry.get("memory_faults", [])
+        )
+        
+        if not already_searched:
+            st.session_state.telemetry["tool_calls"] = st.session_state.telemetry.get("tool_calls", 0) + 1
+            l2_result = query_l2_memory(prompt, keyword, source_graph)
+            
+            if l2_result:
+                tool_output = l2_result
+                fault_line = f"L2 RE-SEARCH HIT | keyword='{keyword}' | {l2_result}"
             else:
-                tool_output = f"No memory hit for keyword: {keyword}"
-                fault_line = f"MISS | keyword='{keyword}'"
+                l3_result = query_l3_wiki(keyword)
+                if l3_result:
+                    tool_output = l3_result
+                    fault_line = f"L3 RE-SEARCH HIT | keyword='{keyword}' | {l3_result}"
+                else:
+                    tool_output = f"No memory hit for keyword: {keyword}"
+                    fault_line = f"RE-SEARCH MISS | keyword='{keyword}'"
 
-        _push_telemetry_item("memory_faults", fault_line)
-        cache.add_tool_result("search_memory", tool_output)
+            _push_telemetry_item("memory_faults", fault_line)
+            cache.add_tool_result("search_memory", tool_output)
 
-        conversation.append({"role": "assistant", "content": content})
-        conversation.append({
-            "role": "user",
-            "content": (
-                f"TOOL RESULT: {tool_output}\n\n"
-                "COMMAND: Search complete. You MUST synthesize the final answer now "
-                "using ONLY the tool result above. DO NOT output JSON. DO NOT call "
-                "search_memory again. If the result is empty, reply with "
-                "'INSUFFICIENT DATA'."
-            ),
-        })
+            conversation.append({"role": "assistant", "content": content})
+            conversation.append({
+                "role": "user",
+                "content": (
+                    f"TOOL RESULT: {tool_output}\n\n"
+                    "COMMAND: Search complete. Read the tool result carefully and synthesize the final answer. "
+                    "Remember to follow the MODE 1 format (prose answer followed by a CLAIMS line). "
+                    "If the answer is truly not in the tool result, output 'INSUFFICIENT DATA'."
+                ),
+            })
 
-        final_answer = _call_policy_model(conversation)
+            final_answer = _call_policy_model(conversation)
+        else:
+            final_answer = content
     else:
-        # CACHE HIT case
         final_answer = content
 
     cache.add_history_turn("assistant", final_answer)
@@ -1263,6 +1310,8 @@ h1 {
                     st.error(final_answer)
                     st.session_state.telemetry["l1_status"] = "error"
 
+                import re as _re
+                final_answer = _re.sub(r'\nCLAIMS:.*$', '', final_answer, flags=_re.DOTALL).strip()
                 answer_placeholder.markdown(final_answer)
 
             st.session_state.messages.append({"role": "assistant", "content": final_answer})

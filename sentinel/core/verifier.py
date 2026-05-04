@@ -45,6 +45,44 @@ def verify_claim(claim: KnowledgeTriple, source_graph: SourceGraph, model_name: 
     # print(f"PREMISE: {premise}")
     # print(f"PREDICTION: {label}")
 
+    if label == "neutral" and source_sentences:
+        # Retry with progressively more context (top-2, then top-3 sentences)
+        claim_keywords = _get_claim_keywords(claim.as_text())
+        scored = []
+        for sentence in source_sentences:
+            overlap = len(claim_keywords.intersection(_get_claim_keywords(sentence)))
+            if overlap >= 1:
+                scored.append((overlap, " ".join(sentence.split())))
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        for n in [2, 3]:
+            if len(scored) < n:
+                break
+            extended_premise = " ".join(s for _, s in scored[:n])
+            ext_inputs = tokenizer(
+                extended_premise,
+                claim.as_text(),
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+            )
+            with torch.no_grad():
+                ext_outputs = model(**ext_inputs)
+                ext_prediction = int(torch.argmax(ext_outputs.logits, dim=-1).item())
+            ext_label = _resolve_label(model, ext_prediction)
+            if ext_label == "entailment":
+                probs = F.softmax(ext_outputs.logits, dim=-1)
+                entail_idx = [
+                    i for i, l in model.config.id2label.items()
+                    if "entail" in l.lower()
+                ][0]
+                conf = probs[0][entail_idx].item()
+                if conf > 0.70:
+                    label = "entailment"
+                    prediction = ext_prediction
+                    outputs = ext_outputs
+                    break
+
     if not claim.is_deterministic and label == "entailment":
         probs = F.softmax(outputs.logits, dim=-1)
         entailment_idx = [i for i, l in model.config.id2label.items() if "entail" in l.lower()][0]
@@ -56,6 +94,33 @@ def verify_claim(claim: KnowledgeTriple, source_graph: SourceGraph, model_name: 
                 reason=f"GLiNER-extracted triple requires higher confidence threshold (got {entailment_score:.2f})",
                 label="neutral"
             )
+
+    # GPE precision check — prevent geographic over-generalisation
+    # e.g. "United Kingdom" claimed when source says "England"
+    if label == "entailment":
+        nlp = _load_spacy()
+        claim_doc = nlp(claim.as_text())
+        claim_gpes = {
+            ent.text.lower().strip()
+            for ent in claim_doc.ents
+            if ent.label_ in ("GPE", "LOC")
+        }
+        if claim_gpes and source_sentences:
+            # Check if all claimed GPEs appear in at least one source sentence
+            source_text = " ".join(source_sentences).lower()
+            missing_gpes = {
+                gpe for gpe in claim_gpes
+                if gpe not in source_text
+            }
+            if missing_gpes:
+                return VerificationResult(
+                    is_verified=False,
+                    reason=(
+                        f"Geographic precision check failed: "
+                        f"{missing_gpes} not found in source document."
+                    ),
+                    label="neutral"
+                )
 
     if label == "entailment":
         return VerificationResult(
@@ -121,7 +186,7 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
     for triple in source_graph.triples:
         triple_keywords = _get_claim_keywords(triple.as_text())
         overlap = len(claim_keywords.intersection(triple_keywords))
-        if overlap >= 2:
+        if overlap >= 1:
             matching_triples.append(triple)
     
     # Match sentences  
@@ -130,10 +195,25 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
         for sentence in source_sentences:
             sent_keywords = _get_claim_keywords(sentence)
             overlap = len(claim_keywords.intersection(sent_keywords))
-            if overlap >= 2:  # sentences need stronger match
+            if overlap >= 1:  # sentences need stronger match
                 clean_sent = " ".join(sentence.split())
                 scored_sentences.append((overlap, clean_sent))
     
+    import re as _re_num
+    claim_numbers = set(_re_num.findall(
+        r'\b\d{1,3}(?:,\d{3})*(?:\.\d+)?%?\b|\b\d+(?:\.\d+)?%?\b', claim.as_text()
+    ))
+    if claim_numbers:
+        boosted_sentences = []
+        for score, sentence in scored_sentences:
+            sentence_numbers = set(_re_num.findall(
+                r'\b\d{1,3}(?:,\d{3})*(?:\.\d+)?%?\b|\b\d+(?:\.\d+)?%?\b', sentence
+            ))
+            if sentence_numbers:
+                score += 3
+            boosted_sentences.append((score, sentence))
+        scored_sentences = boosted_sentences
+
     # Sort by overlap score descending, take only the TOP 1
     scored_sentences.sort(key=lambda x: x[0], reverse=True)
     matching_sentences = [s for _, s in scored_sentences[:1]]

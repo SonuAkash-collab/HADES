@@ -1,152 +1,86 @@
 {
-  "timestamp": "2026-04-27T09:57:28.096573",
-  "pdf": "Apple-1.pdf",
-  "accuracy": 0.7,
-  "avg_reduction": 87.24608889992551,
-  "avg_sdpt_improvement": 46.73880502145241,
-  "raw_nodes": 27,
-  "final_nodes": 26,
-  "l1_budget_used": 503,
-  "document_raw_tokens": 4027,
-  "compression_target": "12.5%",
-  "domain_stats": {
-    "botany": {
-      "correct": 5,
-      "total": 6
-    },
-    "production": {
-      "correct": 1,
-      "total": 2
-    },
-    "history": {
-      "correct": 0,
-      "total": 1
-    },
-    "culture": {
-      "correct": 1,
-      "total": 1
-    }
-  },
-  "cases": [
+  "timestamp": "2026-05-05T03:10:13.365962",
+  "accuracy": 90.0,
+  "results": [
     {
-      "question": "Where does the apple tree originally come from?",
+      "case": 1,
+      "query": "Where does the apple tree originally come from?",
       "expected": "Kazakhstan",
-      "answer": "The apple tree originally comes from Kazakhstan, where a wild Malus sieversii apple was first cultivated thousands of years ago.",
-      "is_correct": true,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 528,
-      "reduction": 86.88850260740006,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.20689655172414
+      "got": "The apple tree originally comes from southern Kazakhstan, Kyrgyzstan, Uzbekistan, Turkey, and northwestern part of China.",
+      "correct": true,
+      "domain": "botany"
     },
     {
-      "question": "What is the scientific name of the wild ancestor of apple trees?",
+      "case": 2,
+      "query": "What is the scientific name of the wild ancestor of apple trees?",
       "expected": "Malus sieversii",
-      "answer": "Wild Malus sieversii apple in Kazakhstan was the earliest tree to be cultivated (Context: thousands of years)",
-      "is_correct": true,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 528,
-      "reduction": 86.88850260740006,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.20689655172414
+      "got": "The scientific name of the wild ancestor of apple trees is _Malus sieversii_.",
+      "correct": true,
+      "domain": "botany"
     },
     {
-      "question": "What percentage of global apple production does China account for in 2013?",
+      "case": 3,
+      "query": "What percentage of global apple production does China account for in 2013?",
       "expected": "49%",
-      "answer": "China accounts for **54.6%** of the global apple production in 2013.",
-      "is_correct": false,
-      "domain": "production",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "INSUFFICIENT DATA",
+      "correct": false,
+      "domain": "production"
     },
     {
-      "question": "How many known variants of apples are there?",
-      "expected": "10000",
-      "answer": "One large collection of over 2,100 apple variants is at the National Fruit Collection in England.",
-      "is_correct": false,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "case": 4,
+      "query": "How many known variants of apples are there?",
+      "expected": "7500",
+      "got": "There are more than 7,500 known variants of apples.",
+      "correct": true,
+      "domain": "production"
     },
     {
-      "question": "What chemical in apple seeds can release cyanide?",
+      "case": 5,
+      "query": "What chemical in apple seeds can release cyanide?",
       "expected": "amygdalin",
-      "answer": "Apples contain amygdalin, which can release cyanide when digested.",
-      "is_correct": true,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "The chemical in apple seeds that can release cyanide is amygdalin.",
+      "correct": true,
+      "domain": "botany"
     },
     {
-      "question": "When was the first apple orchard in North America established?",
+      "case": 6,
+      "query": "When was the first apple orchard in North America established?",
       "expected": "1625",
-      "answer": "The first apple orchard in North America was established in 1607, near Jamestown, Virginia.",
-      "is_correct": false,
-      "domain": "history",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "The first apple orchard on the North American continent was said to be near Boston in 1625.",
+      "correct": true,
+      "domain": "history"
     },
     {
-      "question": "Who wrote the Prose Edda that mentions the goddess Idunn?",
+      "case": 7,
+      "query": "Who wrote the Prose Edda that mentions the goddess Idunn?",
       "expected": "Snorri Sturluson",
-      "answer": "The Prose Edda, which contains the story of I\u00f0unn and her apples, was written by Snorri Sturluson in the 13th century.",
-      "is_correct": true,
-      "domain": "culture",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "Snorri Sturluson",
+      "correct": true,
+      "domain": "culture"
     },
     {
-      "question": "What is the scientific name of the cultivated apple species?",
+      "case": 8,
+      "query": "What is the scientific name of the cultivated apple species?",
       "expected": "Malus domestica",
-      "answer": "The scientific name of the cultivated apple species is **Malus domestica**.",
-      "is_correct": true,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "The scientific name of the cultivated apple species is _Malus domestica_.",
+      "correct": true,
+      "domain": "botany"
     },
     {
-      "question": "What was the total worldwide apple production in 2013?",
+      "case": 9,
+      "query": "What was the total worldwide apple production in 2013?",
       "expected": "90.8 million tonnes",
-      "answer": "90.8 million tonnes",
-      "is_correct": true,
-      "domain": "production",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "The total worldwide apple production in 2013 was 90.8 million tonnes.",
+      "correct": true,
+      "domain": "production"
     },
     {
-      "question": "In which plant family are apples classified?",
+      "case": 10,
+      "query": "In which plant family are apples classified?",
       "expected": "Rosaceae",
-      "answer": "In the plant kingdom, apples belong to the family Rosaceae. Within this family, they are specifically categorized under the subfamily Rosoideae and genus Malus. Among the various species of Malus, the most common one grown by humans is the Malus domestica variety, which includes apples like Gala, Fuji, and Golden Delicious.",
-      "is_correct": true,
-      "domain": "botany",
-      "raw_tokens": 4027,
-      "caveman_tokens": 510,
-      "reduction": 87.33548547305686,
-      "baseline_sdpt": 64.95161290322581,
-      "caveman_sdpt": 18.214285714285715
+      "got": "The plant family in which apples are classified is Rosaceae.",
+      "correct": true,
+      "domain": "botany"
     }
   ]
 }
