@@ -124,7 +124,8 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 ├── charon/             # L1/L2 Compression & Graph Logic
 ├── cerberus/           # L3 NLI Verification Gate
 ├── benchmarks/         # Multi-domain evaluation suite
-└── shared/             # Common utilities & Schema
+├── data/               # Source PDFs for benchmarking
+└── shared/             # Common utilities & Schema (REBEL Extraction)
 ```
 
 ## Tech Stack
