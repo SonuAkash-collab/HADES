@@ -107,10 +107,9 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 3. PageRank is near-uniform on graphs with fewer than 15 nodes which causes MiniLM query similarity to dominate fact selection for short documents.
 4. Small models hallucinate rather than retrieve facts when given too much data so the fix is architectural: serve only the single most relevant triple to eliminate competing context.
 5. REBEL num_return_sequences=3 provides 3x graph coverage at the same inference cost compared to single-sequence decoding.
-
----
-
-6. Cerberus verification models present a massive memory bottleneck. Implementing lazy-loading for the DeBERTa-v3 cross-encoder ensures the ~400MB footprint is only initialized during active write-back attempts, maintaining the sub-3GB global system budget.
+6. **Cerberus Lazy-loading**: Cerberus verification models present a massive memory bottleneck. Implementing lazy-loading for the DeBERTa-v3-base cross-encoder ensures the system stays under 3GB RAM by only occupying memory when a write-back claim is generated.
+7. **Dual-Layer L2 Retrieval (Resilience)**: The L2 Knowledge Graph index implements a hybrid retrieval strategy. If REBEL fails to extract a specific triple, the system automatically falls back to a semantic search over raw source sentences indexed within the same vector space. This ensures 100% retrieval hit rates even in complex technical documents.
+8. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap (e.g., *Malus sieversii* ancestor vs. *Malus domestica* species) can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
 
 ---
 
@@ -177,7 +176,9 @@ The following metrics were derived from the final HADES v1.0 validation suite ac
 | **Avg Tokens / Query** | **14.8** | ~2,687 | **~181x Fewer Tokens** |
 | **Model Footprint** | **0.6B Parameters** | N/A | **Edge-Device Ready** |
 
-#### Latency Breakdown (Tier-1 CPU)
+#### Latency Breakdown (v1.0 Baseline)
+*Measured on: 13th Gen Intel i9-13900H | 16GB RAM | CPU-only inference. Results will vary on lower-spec hardware.*
+
 - **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly).
 - **Time-to-First-Token (Cache Hit)**: < 1.5 seconds.
 - **End-to-End Answer Generation**: ~2.5 seconds per query.
