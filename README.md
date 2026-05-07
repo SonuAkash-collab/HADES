@@ -109,7 +109,11 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 5. REBEL num_return_sequences=3 provides 3x graph coverage at the same inference cost compared to single-sequence decoding.
 6. **Cerberus Lazy-loading**: Cerberus verification models present a massive memory bottleneck. Implementing lazy-loading for the DeBERTa-v3-base cross-encoder ensures the system stays under 3GB RAM by only occupying memory when a write-back claim is generated.
 7. **Dual-Layer L2 Retrieval (Resilience)**: The L2 Knowledge Graph index implements a hybrid retrieval strategy. If REBEL fails to extract a specific triple, the system automatically falls back to a semantic search over raw source sentences indexed within the same vector space. This ensures 100% retrieval hit rates even in complex technical documents.
-8. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap (e.g., *Malus sieversii* ancestor vs. *Malus domestica* species) can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
+8. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
+
+### Known Limitations (v1.0)
+- **Entity Disambiguation**: HADES does not currently distinguish between closely related entities with overlapping relationships. Disambiguation between ancestor and descendant species (e.g., *Malus sieversii* vs. *Malus domestica*) requires typed edges not present in this release.
+- **Extraction Latency**: First-time REBEL extraction on consumer CPUs takes ~2-4 minutes per page; however, the persistent triple-cache mitigates this for all subsequent queries.
 
 ---
 
