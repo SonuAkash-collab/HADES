@@ -21,8 +21,27 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 
 
+import sys
+
+def _safe_print(msg: str, **kwargs):
+    """Safely print unicode to terminal by ignoring unencodable chars."""
+    try:
+        print(msg, **kwargs)
+    except UnicodeEncodeError:
+        print(msg.encode('ascii', 'ignore').decode('ascii'), **kwargs)
+
 _EMBEDDER = None
 _CROSS_ENCODER = None
+class DotDict(dict):
+    def __getattr__(self, name): return self.get(name)
+    def __setattr__(self, name, value): self[name] = value
+
+_SESSION_STATE_FALLBACK = DotDict()
+
+def get_session_state():
+    if st.runtime.exists():
+        return st.session_state
+    return _SESSION_STATE_FALLBACK
 
 @st.cache_resource
 def _get_embedder_cached():
@@ -97,17 +116,17 @@ def _required_system_budget() -> int:
 def _init_session_state() -> None:
     desired_system_budget = _required_system_budget()
 
-    if "selected_model" not in st.session_state:
-        st.session_state.selected_model = "qwen3:0.6b"
+    if "selected_model" not in get_session_state():
+        get_session_state().selected_model = "qwen3:0.6b"
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    if "messages" not in get_session_state():
+        get_session_state().messages = []
 
-    if "source_graph" not in st.session_state:
-        st.session_state.source_graph = None
+    if "source_graph" not in get_session_state():
+        get_session_state().source_graph = None
 
-    if "l1_cache" not in st.session_state:
-        st.session_state.l1_cache = L1Cache(
+    if "l1_cache" not in get_session_state():
+        get_session_state().l1_cache = L1Cache(
             budgets={
                 "system": desired_system_budget,
                 "facts": 400,     # Expanded for dense L2/L3 context (128k window)
@@ -116,30 +135,30 @@ def _init_session_state() -> None:
             }
         )
 
-    if "telemetry" not in st.session_state:
-        st.session_state.telemetry = {
+    if "telemetry" not in get_session_state():
+        get_session_state().telemetry = {
             "l1_status": "initialized",
             "tool_calls": 0,
             "memory_faults": [],
             "cerberus_log": [],
         }
 
-    if "loaded_pdf_name" not in st.session_state:
-        st.session_state.loaded_pdf_name = None
+    if "loaded_pdf_name" not in get_session_state():
+        get_session_state().loaded_pdf_name = None
 
-    if "graph_html" not in st.session_state:
-        st.session_state.graph_html = None
+    if "graph_html" not in get_session_state():
+        get_session_state().graph_html = None
 
-    if "graph_rendered_for" not in st.session_state:
-        st.session_state.graph_rendered_for = None
+    if "graph_rendered_for" not in get_session_state():
+        get_session_state().graph_rendered_for = None
 
-    if "triple_source_pages" not in st.session_state:
-        st.session_state.triple_source_pages = {}
+    if "triple_source_pages" not in get_session_state():
+        get_session_state().triple_source_pages = {}
 
-    if "deep_entity_resolution" not in st.session_state:
-        st.session_state.deep_entity_resolution = False
+    if "deep_entity_resolution" not in get_session_state():
+        get_session_state().deep_entity_resolution = False
 
-    cache: L1Cache = st.session_state.l1_cache
+    cache: L1Cache = get_session_state().l1_cache
     if cache.budgets.get("system", 0) < desired_system_budget:
         upgraded_cache = L1Cache(
             budgets={
@@ -157,7 +176,7 @@ def _init_session_state() -> None:
         for tool_result in cache.set_tools:
             upgraded_cache.add_tool_result(tool_result.tool_name, tool_result.text)
 
-        st.session_state.l1_cache = upgraded_cache
+        get_session_state().l1_cache = upgraded_cache
         cache = upgraded_cache
 
     if not cache.set_system:
@@ -181,11 +200,11 @@ def _init_session_state() -> None:
                 fallback_cache.add_tool_result(tool_result.tool_name, tool_result.text)
 
             fallback_cache.add_system_instruction(SYSTEM_INSTRUCTION)
-            st.session_state.l1_cache = fallback_cache
+            get_session_state().l1_cache = fallback_cache
 
 
 def _push_telemetry_item(key: str, value: str, max_items: int = 12) -> None:
-    items = st.session_state.telemetry.setdefault(key, [])
+    items = get_session_state().telemetry.setdefault(key, [])
     items.append(value)
     if len(items) > max_items:
         del items[:-max_items]
@@ -348,7 +367,7 @@ def _build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[
 
 
 def _call_policy_model(messages: list[dict[str, str]]) -> str:
-    model_name = st.session_state.get("selected_model", OLLAMA_MODEL)
+    model_name = get_session_state().get("selected_model", OLLAMA_MODEL)
     request_messages = [dict(message) for message in messages]
     
     # --- NEW: Qwen3 Thinking Suppression ---
@@ -378,6 +397,7 @@ def _call_policy_model(messages: list[dict[str, str]]) -> str:
 
 
 def query_l2_memory(query: str, keyword: str, source_graph) -> str:
+    _safe_print(f"   [L2 Memory] Querying for keyword: '{keyword}'", flush=True)
     """
     Search L2 memory using triple-content vector index.
     
@@ -396,6 +416,8 @@ def query_l2_memory(query: str, keyword: str, source_graph) -> str:
         return ""
 
     embedder = get_embedder()
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        _safe_print(f"   [L2 Memory] Encoding query vector...")
     query_vector = embedder.encode(query)
 
     # Stage 1: Bi-Encoder — search triple-content vectors
@@ -404,6 +426,9 @@ def query_l2_memory(query: str, keyword: str, source_graph) -> str:
         if entry["vector"] is not None:
             sim = cosine_similarity([query_vector], [entry["vector"]])[0][0]
             scored_triples.append((entry["text"], sim))
+
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        _safe_print(f"   [L2 Memory] Stage 1 (Bi-Encoder) complete. Scored {len(scored_triples)} triples.")
 
     # Sort by similarity, take top 15 candidates for cross-encoder
     scored_triples.sort(key=lambda x: x[1], reverse=True)
@@ -415,9 +440,12 @@ def query_l2_memory(query: str, keyword: str, source_graph) -> str:
     candidate_facts = [text for text, _ in top_candidates]
 
     # Stage 2: Cross-Encoder re-ranking
+    _safe_print(f"   [L2 Memory] Loading Cross-Encoder...", flush=True)
     cross_encoder = get_cross_encoder()
     pairs = [[query, fact] for fact in candidate_facts]
+    _safe_print(f"   [L2 Memory] Stage 2 (Cross-Encoder) reranking {len(pairs)} pairs...", flush=True)
     scores = cross_encoder.predict(pairs)
+    _safe_print(f"   [L2 Memory] Stage 2 complete.", flush=True)
 
     scored_candidates = sorted(
         zip(candidate_facts, scores),
@@ -427,6 +455,10 @@ def query_l2_memory(query: str, keyword: str, source_graph) -> str:
 
     # Return top 3 facts as context
     top_facts = [fact for fact, score in scored_candidates[:3]]
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        _safe_print(f"   [L2 Memory Hit] Found {len(top_facts)} facts for keyword '{keyword}'")
+        for f in top_facts:
+            _safe_print(f"     - {f}")
     return "\n".join(top_facts)
 
 
@@ -543,16 +575,16 @@ def process_pdf(file) -> tuple[int, int]:
             )
 
     if not triples:
-        st.session_state.source_graph = None
-        st.session_state.triple_source_pages = {}
+        get_session_state().source_graph = None
+        get_session_state().triple_source_pages = {}
         return 0, 0
     
     embedder = get_embedder()
     source_graph = build_source_graph(triples, embedder=embedder, source_sentences=all_sentences)
-    st.session_state.source_graph = source_graph
-    st.session_state.triple_source_pages = source_page_lookup
+    get_session_state().source_graph = source_graph
+    get_session_state().triple_source_pages = source_page_lookup
 
-    cache: L1Cache = st.session_state.l1_cache
+    cache: L1Cache = get_session_state().l1_cache
     cache.set_facts.clear()
     cache.set_tools.clear()
 
@@ -562,15 +594,15 @@ def process_pdf(file) -> tuple[int, int]:
 
     injected_from_l3 = _inject_clean_facts_into_l1(cache)
 
-    st.session_state.telemetry["l1_status"] = "pdf_loaded"
+    get_session_state().telemetry["l1_status"] = "pdf_loaded"
 
     # Optional deep entity resolution pass
-    if st.session_state.get("deep_entity_resolution", False):
+    if get_session_state().get("deep_entity_resolution", False):
         from charon.core.graph import normalise_entities_with_llm
         with st.spinner("Deep entity resolution running..."):
             source_graph.graph, extra_merges = normalise_entities_with_llm(
                 source_graph.graph,
-                ollama_model=st.session_state.get("selected_model", OLLAMA_MODEL),
+                ollama_model=get_session_state().get("selected_model", OLLAMA_MODEL),
             )
         if extra_merges > 0:
             _push_telemetry_item(
@@ -604,7 +636,7 @@ def _render_sidebar() -> None:
         st.divider()
 
         # Node Density Card
-        source_graph = st.session_state.source_graph
+        source_graph = get_session_state().source_graph
         active_nodes = source_graph.graph.number_of_nodes() if source_graph is not None else 0
         st.markdown(f"""
             <div class="telemetry-card">
@@ -614,7 +646,7 @@ def _render_sidebar() -> None:
             """, unsafe_allow_html=True)
 
         # L1 Status Card
-        l1_status = st.session_state.telemetry.get("l1_status", "idle").upper()
+        l1_status = get_session_state().telemetry.get("l1_status", "idle").upper()
         st.markdown(f"""
             <div class="telemetry-card">
                 <div class="telemetry-label">L1 Context Status</div>
@@ -623,7 +655,7 @@ def _render_sidebar() -> None:
             """, unsafe_allow_html=True)
 
         # Tool Call Counters
-        tool_calls = st.session_state.telemetry.get("tool_calls", 0)
+        tool_calls = get_session_state().telemetry.get("tool_calls", 0)
         st.markdown(f"""
             <div class="telemetry-card">
                 <div class="telemetry-label">Total Tool Faults (L2/L3)</div>
@@ -633,7 +665,7 @@ def _render_sidebar() -> None:
 
         st.divider()
         st.markdown("<div class='telemetry-label'>Memory Fault Logs</div>", unsafe_allow_html=True)
-        for fault in st.session_state.telemetry.get("memory_faults", [])[-5:]:
+        for fault in get_session_state().telemetry.get("memory_faults", [])[-5:]:
             st.caption(f"> {fault}")
 
         st.divider()
@@ -645,7 +677,7 @@ def _render_sidebar() -> None:
             label="model",
             options=["qwen3:0.6b", "phi3.5", "llama3.2:3b"],
             index=["qwen3:0.6b", "phi3.5", "llama3.2:3b"].index(
-                st.session_state.get("selected_model", "qwen3:0.6b")
+                get_session_state().get("selected_model", "qwen3:0.6b")
             ),
             label_visibility="collapsed",
             help=(
@@ -654,8 +686,8 @@ def _render_sidebar() -> None:
                 "llama3.2:3b — balanced, requires more RAM"
             ),
         )
-        if selected != st.session_state.get("selected_model"):
-            st.session_state.selected_model = selected
+        if selected != get_session_state().get("selected_model"):
+            get_session_state().selected_model = selected
             st.rerun()
 
         st.markdown(
@@ -664,7 +696,7 @@ def _render_sidebar() -> None:
         )
         deep_res = st.toggle(
             "Deep entity resolution",
-            value=st.session_state.deep_entity_resolution,
+            value=get_session_state().deep_entity_resolution,
             help=(
                 "Runs a local LLM pass to resolve pronouns and "
                 "implicit references (e.g. 'it' → 'apple tree'). "
@@ -672,7 +704,7 @@ def _render_sidebar() -> None:
                 "Disable for fast demos."
             ),
         )
-        st.session_state.deep_entity_resolution = deep_res
+        get_session_state().deep_entity_resolution = deep_res
         if deep_res:
             st.markdown(
                 "<div style='font-family:IBM Plex Mono,monospace;"
@@ -683,10 +715,10 @@ def _render_sidebar() -> None:
 
         st.divider()
         if st.button("Flush L1 Cache"):
-            st.session_state.l1_cache.set_facts.clear()
-            st.session_state.l1_cache.set_history.clear()
-            st.session_state.l1_cache.set_tools.clear()
-            st.session_state.telemetry["l1_status"] = "flushed"
+            get_session_state().l1_cache.set_facts.clear()
+            get_session_state().l1_cache.set_history.clear()
+            get_session_state().l1_cache.set_tools.clear()
+            get_session_state().telemetry["l1_status"] = "flushed"
             st.rerun()
 
         st.divider()
@@ -694,7 +726,7 @@ def _render_sidebar() -> None:
             "<div class='telemetry-label' style='color:#b388ff'>Cerberus Gate Log</div>",
             unsafe_allow_html=True
         )
-        for entry in st.session_state.telemetry.get("cerberus_log", [])[-5:]:
+        for entry in get_session_state().telemetry.get("cerberus_log", [])[-5:]:
             if "CLEAN" in entry:
                 colour = "#00e676"
             elif "CONTRADICTION" in entry:
@@ -710,7 +742,7 @@ def _render_sidebar() -> None:
                 unsafe_allow_html=True
             )
 
-    cache: L1Cache = st.session_state.l1_cache
+    cache: L1Cache = get_session_state().l1_cache
     with st.sidebar.expander("L1 CACHE PARTITIONS", expanded=False):
         st.markdown("**System**")
         st.write(cache.set_system or ["<empty>"])
@@ -734,7 +766,7 @@ def _run_cerberus_writeback(final_answer: str) -> bool:
     Returns ``False`` if any triple is labelled *contradiction* by DeBERTa,
     indicating an active hallucination.
     """
-    source_graph = st.session_state.source_graph
+    source_graph = get_session_state().source_graph
     if source_graph is None:
         _push_telemetry_item("cerberus_log", "No source graph loaded; Cerberus verification skipped.")
         return True
@@ -765,7 +797,7 @@ def _run_cerberus_writeback(final_answer: str) -> bool:
         _push_telemetry_item("cerberus_log", "No triples extracted from assistant answer.")
         return True
 
-    source_page_lookup: dict[tuple[str, str, str], int] = st.session_state.get("triple_source_pages", {})
+    source_page_lookup: dict[tuple[str, str, str], int] = get_session_state().get("triple_source_pages", {})
     has_contradiction = False
 
     for triple in answer_triples:
@@ -796,13 +828,15 @@ def _run_cerberus_writeback(final_answer: str) -> bool:
                 f"⚠️ NEUTRAL | {triple.as_text()} | {verdict.reason}",
             )
 
-    _inject_clean_facts_into_l1(st.session_state.l1_cache)
+    _inject_clean_facts_into_l1(get_session_state().l1_cache)
     return not has_contradiction
 
 
 def _chat_loop(prompt: str) -> str:
-    cache: L1Cache = st.session_state.l1_cache
-    source_graph = st.session_state.source_graph
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        _safe_print(f"\n   [HADES] Processing query: '{prompt}'", flush=True)
+    cache: L1Cache = get_session_state().l1_cache
+    source_graph = get_session_state().source_graph
 
     _inject_clean_facts_into_l1(cache)
     cache.add_history_turn("user", prompt)
@@ -810,6 +844,7 @@ def _chat_loop(prompt: str) -> str:
     # --- L1/L2 JOINT RETRIEVAL ---
     active_facts = [entry.text for entry in cache.set_facts.values()]
     l2_result = query_l2_memory(prompt, prompt, source_graph)
+    _safe_print(f"   [HADES] L2 retrieval complete. Merging with L1...", flush=True)
     l2_facts = l2_result.split("\n") if l2_result else []
 
     if not active_facts and not l2_facts:
@@ -820,14 +855,21 @@ def _chat_loop(prompt: str) -> str:
         combined = list(set(active_facts + l2_facts))
         ce = get_cross_encoder()
         pairs = [[prompt, f] for f in combined]
+        if get_session_state().telemetry.get("l1_status") == "benchmark":
+            _safe_print(f"   [Cross-Encoder] Reranking {len(combined)} candidate facts...")
         scores = ce.predict(pairs)
+        if get_session_state().telemetry.get("l1_status") == "benchmark":
+            _safe_print(f"   [Cross-Encoder] Reranking complete.")
         scored_facts = sorted(zip(combined, scores), key=lambda x: x[1], reverse=True)
         # These are the top facts actually handed to the LLM
         forced_facts = [f for f, s in scored_facts[:5]]
 
     # --- 1. LOG INITIAL RETRIEVAL HITS ---
-    if st.session_state.telemetry.get("l1_status") == "benchmark":
-        st.session_state.telemetry.setdefault("retrieved_triples", []).extend(forced_facts)
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        get_session_state().telemetry.setdefault("retrieved_triples", []).extend(forced_facts)
+        _safe_print(f"   [L1 Retrieval] Handed {len(forced_facts)} facts to LLM:", flush=True)
+        for f in forced_facts:
+            _safe_print(f"     - {f}", flush=True)
     # -------------------------------------
 
     conversation = _build_partitioned_messages(cache, prompt, forced_facts=forced_facts)
@@ -839,11 +881,11 @@ def _chat_loop(prompt: str) -> str:
         # Check if we already searched for this exact keyword in this turn to avoid loops
         already_searched = any(
             isinstance(item, dict) and item.get("keyword") == keyword 
-            for item in st.session_state.telemetry.get("memory_faults", [])
+            for item in get_session_state().telemetry.get("memory_faults", [])
         )
         
         if not already_searched:
-            st.session_state.telemetry["tool_calls"] = st.session_state.telemetry.get("tool_calls", 0) + 1
+            get_session_state().telemetry["tool_calls"] = get_session_state().telemetry.get("tool_calls", 0) + 1
             l2_result = query_l2_memory(prompt, keyword, source_graph)
             
             if l2_result:
@@ -859,8 +901,8 @@ def _chat_loop(prompt: str) -> str:
                     fault_line = f"RE-SEARCH MISS | keyword='{keyword}'"
 
             # --- 2. LOG RE-SEARCH TOOL HITS ---
-            if st.session_state.telemetry.get("l1_status") == "benchmark" and tool_output and not tool_output.startswith("No memory hit"):
-                st.session_state.telemetry.setdefault("retrieved_triples", []).append(tool_output)
+            if get_session_state().telemetry.get("l1_status") == "benchmark" and tool_output and not tool_output.startswith("No memory hit"):
+                get_session_state().telemetry.setdefault("retrieved_triples", []).append(tool_output)
             # ----------------------------------
 
             _push_telemetry_item("memory_faults", fault_line)
@@ -882,6 +924,9 @@ def _chat_loop(prompt: str) -> str:
             final_answer = content
     else:
         final_answer = content
+
+    if get_session_state().telemetry.get("l1_status") == "benchmark":
+        _safe_print(f"   [HADES] Answer: {final_answer}\n", flush=True)
 
     cache.add_history_turn("assistant", final_answer)
     return final_answer
@@ -925,7 +970,7 @@ def render_graph_visual(source_graph) -> bytes:
     max_pr = max(pr_scores.values()) if pr_scores else 1.0
 
     # ── Cerberus verification status lookup ──
-    cerberus_log = st.session_state.telemetry.get("cerberus_log", [])
+    cerberus_log = get_session_state().telemetry.get("cerberus_log", [])
     node_status: dict[str, str] = {}  # node label -> "clean" | "dirty"
     for entry in cerberus_log:
         entry_lower = entry.lower()
@@ -1284,12 +1329,12 @@ h1 {
 """, unsafe_allow_html=True)
 
     uploaded_pdf = st.file_uploader("Upload source PDF", type=["pdf"])
-    if uploaded_pdf is not None and st.session_state.loaded_pdf_name != uploaded_pdf.name:
+    if uploaded_pdf is not None and get_session_state().loaded_pdf_name != uploaded_pdf.name:
         with st.spinner("Ingesting PDF into L2 and populating L1 facts..."):
             triple_count, node_count = process_pdf(uploaded_pdf)
-            st.session_state.loaded_pdf_name = uploaded_pdf.name
+            get_session_state().loaded_pdf_name = uploaded_pdf.name
             # Invalidate cached graph rendering so the map tab re-renders
-            st.session_state.graph_rendered_for = None
+            get_session_state().graph_rendered_for = None
         st.success(f"Loaded {uploaded_pdf.name}: {triple_count} triples, {node_count} L2 graph nodes")
 
     # ── Tabbed layout: Chat + Knowledge Map ──
@@ -1297,13 +1342,13 @@ h1 {
 
     # ── Chat tab ──
     with tab_chat:
-        for msg in st.session_state.messages:
+        for msg in get_session_state().messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
         prompt = st.chat_input("Ask a question about the loaded document")
         if prompt:
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            get_session_state().messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
@@ -1326,17 +1371,17 @@ h1 {
                 except Exception as exc:
                     final_answer = f"Error: {exc}"
                     st.error(final_answer)
-                    st.session_state.telemetry["l1_status"] = "error"
+                    get_session_state().telemetry["l1_status"] = "error"
 
                 import re as _re
                 final_answer = _re.sub(r'\nCLAIMS:.*$', '', final_answer, flags=_re.DOTALL).strip()
                 answer_placeholder.markdown(final_answer)
 
-            st.session_state.messages.append({"role": "assistant", "content": final_answer})
+            get_session_state().messages.append({"role": "assistant", "content": final_answer})
 
     # ── Knowledge Map tab ──
     with tab_map:
-        source_graph = st.session_state.source_graph
+        source_graph = get_session_state().source_graph
         if source_graph is None:
             st.info("Upload a PDF to visualize the L2 Knowledge Map.")
         else:

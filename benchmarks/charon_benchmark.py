@@ -17,6 +17,24 @@ from shared.extractor import extract_claim_triples, extract_source_triples
 from shared.triple import KnowledgeTriple
 from typing import Callable
 from charon.core.semantic_arbitrator import verify_facts_against_query
+import streamlit as st
+
+import app
+st.session_state = app._SESSION_STATE_FALLBACK
+
+# Also patch it at the module level to be sure
+from unittest.mock import patch
+patcher = patch('streamlit.session_state', app._SESSION_STATE_FALLBACK)
+patcher.start()
+
+import sys
+def _safe_print(msg: str, **kwargs):
+    """Safely print unicode to terminal by ignoring unencodable chars."""
+    try:
+        print(msg, **kwargs)
+    except UnicodeEncodeError:
+        print(msg.encode('ascii', 'ignore').decode('ascii'), **kwargs)
+# ---------------------------------------------------------
 
 
 DATASET: list[dict[str, str]] = [
@@ -146,9 +164,9 @@ def os_generate_response(
         normalized_scores = _sigmoid(raw_scores)
         if isinstance(normalized_scores, float): normalized_scores = [normalized_scores]
         
-        print(f"\n[L1 VERIFY] Query: {user_query}")
+        _safe_print(f"\n[L1 VERIFY] Query: {user_query}")
         for f, s in zip(l1_cache_facts, normalized_scores):
-            print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
+            _safe_print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
 
     verified_facts = verify_facts_against_query(user_query, l1_cache_facts, threshold=0.50)
     
@@ -161,9 +179,9 @@ def os_generate_response(
             raw_scores = model.predict(pairs)
             normalized_scores = _sigmoid(raw_scores)
             if isinstance(normalized_scores, float): normalized_scores = [normalized_scores]
-            print(f"\n[L2 VERIFY] Query: {user_query}")
+            _safe_print(f"\n[L2 VERIFY] Query: {user_query}")
             for f, s in zip(l2_facts, normalized_scores):
-                print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
+                _safe_print(f"  Score: {s:.4f} | Fact: {f.as_text()}")
         
         verified_facts = verify_facts_against_query(user_query, l2_facts, threshold=0.50)
 
@@ -198,10 +216,10 @@ def os_generate_response(
 
 
 def ask_judge(charon_context: str, l1_facts: list[KnowledgeTriple], question: str, source_graph) -> str:
-    print("\n" + "=" * 100)
-    print("L1 CONTEXT GENERATED (Charon Prose)")
-    print("=" * 100)
-    print(charon_context)
+    _safe_print("\n" + "=" * 100)
+    _safe_print("L1 CONTEXT GENERATED (Charon Prose)")
+    _safe_print("=" * 100)
+    _safe_print(charon_context)
 
     # Revolution: Use triples directly instead of re-extracting from condensed prose
     def l2_callback(query: str):
@@ -213,24 +231,24 @@ def ask_judge(charon_context: str, l1_facts: list[KnowledgeTriple], question: st
         l2_fetch_callback=l2_callback
     )
 
-    print("\n" + "=" * 100)
-    print("FINAL ANSWER")
-    print("=" * 100)
-    print(final_answer)
+    _safe_print("\n" + "=" * 100)
+    _safe_print("FINAL ANSWER")
+    _safe_print("=" * 100)
+    _safe_print(final_answer)
     
     # Cerberus Write-Back Gate
     from shared.extractor import extract_claim_triples
     dirty_triples = extract_claim_triples(final_answer)
     
     if dirty_triples:
-        print("\n" + "=" * 100)
-        print("CERBERUS WRITE-BACK GATE")
-        print("=" * 100)
+        _safe_print("\n" + "=" * 100)
+        _safe_print("CERBERUS WRITE-BACK GATE")
+        _safe_print("=" * 100)
         for triple in dirty_triples:
             result = verify_claim(triple, source_graph, 
                                   source_sentences=source_graph.source_sentences)
             status = "CLEAN" if result.is_verified else "DIRTY"
-            print(f"[{status}]: [{triple.as_text()}] -- {result.label}")
+            _safe_print(f"[{status}]: [{triple.as_text()}] -- {result.label}")
 
     return final_answer
 
@@ -367,25 +385,25 @@ def main() -> int:
             }
         )
 
-    print("=" * 130)
-    print("CHARON BENCHMARK REPORT")
-    print("=" * 130)
-    print(
+    _safe_print("=" * 130)
+    _safe_print("CHARON BENCHMARK REPORT")
+    _safe_print("=" * 130)
+    _safe_print(
         f"{'Case':<4} {'Raw Tok':>8} {'Cave Tok':>10} {'Red%':>8} {'Baseline SDpT':>15} {'Charon SDpT':>15} {'Improvement':>12} {'Accuracy':>10}"
     )
-    print("-" * 130)
+    _safe_print("-" * 130)
     for index, row in enumerate(rows, start=1):
         accuracy_label = "PASS" if row["accuracy"] else "FAIL"
-        print(
+        _safe_print(
             f"{index:<4} {row['raw_tokens']:>8} {row['charon_tokens']:>10} "
             f"{row['reduction']:>7.2f}% {row['baseline_sdpt']:>15.4f} {row['sdpt']:>15.4f} "
             f"{row['sdpt_improvement']:>12.4f} {accuracy_label:>10}"
         )
-    print("-" * 130)
+    _safe_print("-" * 130)
     for index, row in enumerate(rows, start=1):
-        print(f"Case {index}: {row['question']}")
-        print(f"  Expected: {row['expected']}")
-        print(f"  Answer:   {row['answer']}")
+        _safe_print(f"Case {index}: {row['question']}")
+        _safe_print(f"  Expected: {row['expected']}")
+        _safe_print(f"  Answer:   {row['answer']}")
 
     import json, datetime
     results_summary = {
@@ -404,12 +422,12 @@ def main() -> int:
     with open("benchmarks/charon_benchmark_results.json", "w") as f:
         json.dump(results_summary, f, indent=2)
 
-    print("\n[SUCCESS] Results saved to benchmarks/charon_benchmark_results.json")
-    print(f"   Overall accuracy: {results_summary['accuracy']*100:.1f}%")
-    print(f"   Avg compression: {results_summary['avg_compression_ratio']:.1f}%")
-    print(f"   Avg baseline SDpT: {results_summary['avg_baseline_sdpt']:.2f}")
-    print(f"   Avg Charon SDpT:  {results_summary['avg_charon_sdpt']:.2f}")
-    print(f"   Avg improvement:   {results_summary['avg_sdpt_improvement']:.2f} tokens/ACU")
+    _safe_print("\n[SUCCESS] Results saved to benchmarks/charon_benchmark_results.json")
+    _safe_print(f"   Overall accuracy: {results_summary['accuracy']*100:.1f}%")
+    _safe_print(f"   Avg compression: {results_summary['avg_compression_ratio']:.1f}%")
+    _safe_print(f"   Avg baseline SDpT: {results_summary['avg_baseline_sdpt']:.2f}")
+    _safe_print(f"   Avg Charon SDpT:  {results_summary['avg_charon_sdpt']:.2f}")
+    _safe_print(f"   Avg improvement:   {results_summary['avg_sdpt_improvement']:.2f} tokens/ACU")
 
     return 0
 

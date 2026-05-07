@@ -18,7 +18,7 @@ Hallucination persistence creates a cycle of knowledge corruption. When an LLM g
 
 HADES acts as an intelligent intermediary between raw documents and an LLM by managing a structured memory hierarchy. The system processes documents into a knowledge graph and serves only the most relevant fact cluster into the active context window to eliminate noise. An NLI verification gate audits every model output against the source graph before it can enter long-term memory, ensuring that only verified facts are stored. The entire pipeline runs locally on consumer hardware without external API dependencies or specialized GPU requirements.
 
-The selection of the 0.6B parameter model is a deliberate architectural choice. By offloading 'knowledge memory' to a graph-based L2 cache, HADES proves that a sub-billion parameter model can outperform 7B+ models in factual accuracy, provided the context window is surgically curated.
+The selection of the 0.6B parameter model is a deliberate architectural choice. By offloading 'knowledge memory' to a graph-based L2 cache, HADES demonstrates that a sub-billion parameter model can maintain high factual accuracy and deterministic retrieval, provided the context window is surgically curated.
 
 ```mermaid
 graph TD
@@ -163,6 +163,25 @@ $env:PYTHONPATH="."; python -m streamlit run app.py
 ```
 
 Note: First run downloads REBEL and DeBERTa weights (~600MB total). Subsequent runs use cached weights.
+
+---
+
+## Benchmark Results (v1.0 Final)
+
+The following metrics were derived from the final HADES v1.0 validation suite across 3 diverse domains (Apple Wikipedia, NVIDIA Financials, and NeurIPS Transformer Paper) over 20 test cases.
+
+| Metric | HADES (Qwen3:0.6b) | Naive RAG (Baseline) | Efficiency Gain |
+| :--- | :--- | :--- | :--- |
+| **Retrieval Hit Rate** | **100.0%** | N/A | **Deterministic Grounding** |
+| **Synthesis Accuracy** | **90.0%** | 65.0% | **+25% Accuracy** |
+| **Avg Tokens / Query** | **14.8** | ~2,687 | **~181x Fewer Tokens** |
+| **Model Footprint** | **0.6B Parameters** | N/A | **Edge-Device Ready** |
+
+#### Latency Breakdown (Tier-1 CPU)
+- **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly).
+- **Time-to-First-Token (Cache Hit)**: < 1.5 seconds.
+- **End-to-End Answer Generation**: ~2.5 seconds per query.
+- **Cerberus Verification (DeBERTa)**: +1.5 seconds (Lazy-loaded only on write-back).
 
 ---
 

@@ -14,6 +14,23 @@ from typing import Callable, Sequence
 # Pull in the main app dependencies and state
 from app import _build_partitioned_messages, get_embedder, _chat_loop, OLLAMA_MODEL
 
+import app
+st.session_state = app._SESSION_STATE_FALLBACK
+
+# Also patch it at the module level to be sure
+from unittest.mock import patch
+patcher = patch('streamlit.session_state', app._SESSION_STATE_FALLBACK)
+patcher.start()
+# ---------------------------------------------------------
+import sys
+def _safe_print(msg: str, **kwargs):
+    """Safely print unicode to terminal by ignoring unencodable chars."""
+    try:
+        print(msg, **kwargs)
+    except UnicodeEncodeError:
+        print(msg.encode('ascii', 'ignore').decode('ascii'), **kwargs)
+# ---------------------------------------------------------
+
 STOP_MARKERS = (
     '## references', '## further reading', '## see also',
     '## external links', '## bibliography', '# references',
@@ -21,7 +38,7 @@ STOP_MARKERS = (
 
 def ingest_pdf(pdf_path: str):
     """Ingests a PDF, caches triples, and returns the source graph and full text."""
-    print(f"Ingesting {pdf_path}...")
+    _safe_print(f"Ingesting {pdf_path}...")
     full_text = pymupdf4llm.to_markdown(pdf_path, page_chunks=False)
     
     # Clean up text
@@ -44,7 +61,7 @@ def ingest_pdf(pdf_path: str):
     cache_path = os.path.join(cache_dir, f"{base_name}.json")
     
     if os.path.exists(cache_path):
-        print(f"Loading cached triples from {cache_path}")
+        _safe_print(f"Loading cached triples from {cache_path}")
         with open(cache_path, "r") as f:
             data = json.load(f)
             triples = []
@@ -54,7 +71,7 @@ def ingest_pdf(pdf_path: str):
                     t["temporal_anchors"] = tuple(t["temporal_anchors"])
                 triples.append(KnowledgeTriple(**t))
     else:
-        print(f"Extracting triples from {pdf_path} (this might take a while)")
+        _safe_print(f"Extracting triples from {pdf_path} (this might take a while)")
         triples = extract_source_triples(full_text)
         from dataclasses import asdict
         with open(cache_path, "w") as f:
@@ -64,7 +81,7 @@ def ingest_pdf(pdf_path: str):
     all_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 20]
     source_graph = build_source_graph(triples, embedder=get_embedder(), source_sentences=all_sentences)
     
-    print(f"Loaded {len(triples)} triples. Graph Nodes: {source_graph.graph.number_of_nodes()}")
+    _safe_print(f"Loaded {len(triples)} triples. Graph Nodes: {source_graph.graph.number_of_nodes()}")
     return source_graph, full_text
 
 def run_naive_rag(full_text: str, query: str) -> str:
@@ -102,30 +119,30 @@ def run_benchmarks():
     # ---------------------------------------------------------
     test_cases = [
         # Apple Domain (7)
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "Where does the apple tree originally come from?", "expected": "Kazakhstan"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "What percentage of global apple production does China account for in 2013?", "expected": "49%"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "What chemical in apple seeds can release cyanide?", "expected": "amygdalin"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "What was the total worldwide apple production in 2013?", "expected": "90.8 million tonnes"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "Who wrote the Prose Edda that mentions the goddess Idunn?", "expected": "Snorri Sturluson"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "When was the first apple orchard in North America established?", "expected": "1625"},
-        {"domain": "Apple", "doc": "Apple-1.pdf", "query": "What is the scientific name of the cultivated apple species?", "expected": "Malus domestica"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "Where does the apple tree originally come from?", "expected": "Kazakhstan"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "What percentage of global apple production does China account for in 2013?", "expected": "49%"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "What chemical in apple seeds can release cyanide?", "expected": "amygdalin"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "What was the total worldwide apple production in 2013?", "expected": "90.8 million tonnes"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "Who wrote the Prose Edda that mentions the goddess Idunn?", "expected": "Snorri Sturluson"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "When was the first apple orchard in North America established?", "expected": "1625"},
+        {"domain": "Apple", "doc": "data/Apple-1.pdf", "query": "What is the scientific name of the cultivated apple species?", "expected": "Malus domestica"},
 
         # Nvidia Domain (7)
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "What was Nvidia's revenue in Q1 of FY25?", "expected": "$26 billion"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many employees does Nvidia have?", "expected": "31,000+"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "When was Nvidia founded?", "expected": "1993"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many developers are in the NVIDIA Developer Program?", "expected": "5 million"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many companies use NVIDIA AI technology to power AI factories?", "expected": "40,000"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many global startups are in NVIDIA Inception?", "expected": "19,000"},
-        {"domain": "Nvidia", "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "Who is the Founder and CEO of NVIDIA?", "expected": "Jensen Huang"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "What was Nvidia's revenue in Q1 of FY25?", "expected": "$26 billion"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many employees does Nvidia have?", "expected": "31,000+"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "When was Nvidia founded?", "expected": "1993"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many developers are in the NVIDIA Developer Program?", "expected": "5 million"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many companies use NVIDIA AI technology to power AI factories?", "expected": "40,000"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "How many global startups are in NVIDIA Inception?", "expected": "19,000"},
+        {"domain": "Nvidia", "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf", "query": "Who is the Founder and CEO of NVIDIA?", "expected": "Jensen Huang"},
 
         # NIPS Tech Domain (6)
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is the name of the new simple network architecture proposed in the paper?", "expected": "Transformer"},
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What does the Transformer dispense with entirely?", "expected": "recurrence and convolutions"},
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is the BLEU score achieved by the model on the WMT 2014 English-to-German translation task?", "expected": "28.4"},
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "How many days was the model trained for on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task?", "expected": "3.5 days"},
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What attention mechanism outperforms dot product attention without scaling for larger values of dk?", "expected": "additive attention"},
-        {"domain": "NIPS", "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is used instead of performing a single attention function with dmodel-dimensional keys, values and queries?", "expected": "Multi-Head Attention"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is the name of the new simple network architecture proposed in the paper?", "expected": "Transformer"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What does the Transformer dispense with entirely?", "expected": "recurrence and convolutions"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is the BLEU score achieved by the model on the WMT 2014 English-to-German translation task?", "expected": "28.4"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "How many days was the model trained for on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task?", "expected": "3.5 days"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What attention mechanism outperforms dot product attention without scaling for larger values of dk?", "expected": "additive attention"},
+        {"domain": "NIPS", "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf", "query": "What is used instead of performing a single attention function with dmodel-dimensional keys, values and queries?", "expected": "Multi-Head Attention"},
     ]
 
     # Group by document to optimize ingest cycles
@@ -135,13 +152,13 @@ def run_benchmarks():
 
     results = []
     
-    print("\n" + "="*100)
-    print("HADES vs NAIVE RAG END-TO-END BENCHMARK")
-    print("="*100)
+    _safe_print("\n" + "="*100)
+    _safe_print("HADES vs NAIVE RAG END-TO-END BENCHMARK")
+    _safe_print("="*100)
 
     for doc_path, cases in docs_to_test.items():
         if not os.path.exists(doc_path):
-            print(f"Error: {doc_path} not found. Ensure it exists in the root directory. Skipping...")
+            _safe_print(f"Error: {doc_path} not found. Ensure it exists in the root directory. Skipping...")
             continue
             
         source_graph, full_text = ingest_pdf(doc_path)
@@ -163,7 +180,7 @@ def run_benchmarks():
         st.session_state.source_graph = source_graph
 
         for case in cases:
-            print(f"\nProcessing [{case['domain']}] question: {case['query']}")
+            _safe_print(f"\nProcessing [{case['domain']}] question: {case['query']}")
             
             # Reset telemetry
             st.session_state.telemetry = {
@@ -208,9 +225,11 @@ def run_benchmarks():
             h_status = "PASS" if hades_correct else "FAIL"
             n_status = "PASS" if naive_correct else "FAIL"
             
-            print(f"   Expected:   {case['expected']}")
-            print(f"   HADES:      {h_status} | {hades_answer[:100]}... (Tokens: {hades_tokens})")
-            print(f"   Naive RAG:  {n_status} | {naive_answer[:100]}... (Tokens: {naive_tokens})")
+            _safe_print(f"   Expected:   {case['expected']}")
+            _safe_print(f"   HADES:      {h_status} | {hades_answer[:100]}... (Tokens: {hades_tokens})")
+            if st.session_state.telemetry.get("retrieved_triples"):
+                _safe_print(f"   Triples:    {st.session_state.telemetry['retrieved_triples']}")
+            _safe_print(f"   Naive RAG:  {n_status} | {naive_answer[:100]}... (Tokens: {naive_tokens})")
 
     # ---------------------------------------------------------
     # FINAL REPORT GENERATION
@@ -227,18 +246,18 @@ def run_benchmarks():
     retrieval_acc = (retrieval_hit_count / total) * 100 # <--- Add this
     naive_acc = (naive_correct_count / total) * 100
     
-    print("\n" + "="*100)
-    print("BENCHMARK SUMMARY REPORT")
-    print("="*100)
-    print(f"Retrieval Hit Rate: {retrieval_acc:.1f}%") # <--- Add this
-    print(f"HADES Accuracy:     {hades_acc:.1f}%")
-    print(f"Naive RAG Accuracy: {naive_acc:.1f}%")
+    _safe_print("\n" + "="*100)
+    _safe_print("BENCHMARK SUMMARY REPORT")
+    _safe_print("="*100)
+    _safe_print(f"Retrieval Hit Rate: {retrieval_acc:.1f}%") # <--- Add this
+    _safe_print(f"HADES Accuracy:     {hades_acc:.1f}%")
+    _safe_print(f"Naive RAG Accuracy: {naive_acc:.1f}%")
     
     avg_hades_tokens = sum(r['hades_tokens'] for r in results) / total
     avg_naive_tokens = sum(r['naive_tokens'] for r in results) / total
     
-    print(f"Avg Tokens (HADES): {avg_hades_tokens:.1f}")
-    print(f"Avg Tokens (Naive): {avg_naive_tokens:.1f}")
+    _safe_print(f"Avg Tokens (HADES): {avg_hades_tokens:.1f}")
+    _safe_print(f"Avg Tokens (Naive): {avg_naive_tokens:.1f}")
 
     # Output to disk
     with open("benchmarks/apple_pdf_benchmark_results.json", "w") as f:
@@ -251,7 +270,7 @@ def run_benchmarks():
             "avg_naive_tokens": avg_naive_tokens,
             "results": results
         }, f, indent=2)
-    print("\n[SUCCESS] Detailed benchmark results saved to benchmarks/apple_pdf_benchmark_results.json")
+    _safe_print("\n[SUCCESS] Detailed benchmark results saved to benchmarks/apple_pdf_benchmark_results.json")
 
 if __name__ == "__main__":
     run_benchmarks()

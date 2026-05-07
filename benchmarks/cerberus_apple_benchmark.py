@@ -16,6 +16,24 @@ import json
 import time
 from dataclasses import dataclass
 from typing import Literal
+import streamlit as st
+
+# ---------------------------------------------------------
+# STREAMLIT SESSION STATE MOCK (Aggressive Patch)
+# ---------------------------------------------------------
+from unittest.mock import MagicMock
+class MockSessionState(dict):
+    def __getattr__(self, name): return self.get(name)
+    def __setattr__(self, name, value): self[name] = value
+
+mock_state = MockSessionState()
+st.session_state = mock_state
+
+# Also patch it at the module level to be sure
+from unittest.mock import patch
+patcher = patch('streamlit.session_state', mock_state)
+patcher.start()
+# ---------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Source text: extracted verbatim from Apple-1.pdf (used as source graph)
