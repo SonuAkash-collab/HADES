@@ -206,6 +206,10 @@ def extract_markdown_triples(markdown_text: str) -> list[KnowledgeTriple]:
             process_chunk(clean_header(active_header), grouped_text)
             grouped_text = []
             active_header = stripped.lstrip("#").strip()
+            # If the header itself contains a lot of text (not just a title), 
+            # add it to the next chunk's text so REBEL can see it.
+            if len(active_header) > 50:
+                grouped_text.append(active_header)
         else:
             grouped_text.append(line)
 
