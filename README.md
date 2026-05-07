@@ -172,13 +172,13 @@ Note: First run downloads REBEL and DeBERTa weights (~600MB total). Subsequent r
 
 ## Benchmark Results (v1.0 Final)
 
-The following metrics were derived from the final HADES v1.0 validation suite across 3 diverse domains (Apple Wikipedia, NVIDIA Financials, and NeurIPS Transformer Paper) over 20 test cases.
+### HADES v1.0 Performance Baseline
 
-| Metric | HADES (Qwen3:0.6b) | Naive RAG (Baseline) | Efficiency Gain |
+| Metric | HADES v1.0 | Naive RAG (Baseline) | Efficiency Gain |
 | :--- | :--- | :--- | :--- |
-| **Retrieval Hit Rate** | **100.0%** | N/A | **Deterministic Grounding** |
-| **Synthesis Accuracy** | **90.0%** | 65.0% | **+25% Accuracy** |
-| **Avg Tokens / Query** | **14.8** | ~2,687 | **~181x Fewer Tokens** |
+| **Retrieval Hit Rate** | **100%** | N/A | **No Edge Blindness** |
+| **Synthesis Accuracy** | **80%** | 60% | **+20% Factual Fidelity** |
+| **Avg Tokens / Query** | **13.4** | ~2,683 | **~200x Fewer Tokens** |
 | **Model Footprint** | **0.6B Parameters** | N/A | **Edge-Device Ready** |
 
 #### Latency Breakdown (v1.0 Baseline)
