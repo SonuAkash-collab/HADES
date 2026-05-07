@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-05-08T02:45:13.990104",
+  "timestamp": "2026-05-08T03:55:31.235757",
   "hades_accuracy": 90.0,
   "retrieval_hit_rate": 100.0,
-  "naive_rag_accuracy": 65.0,
-  "avg_hades_tokens": 14.8,
-  "avg_naive_tokens": 2686.65,
+  "naive_rag_accuracy": 60.0,
+  "avg_hades_tokens": 13.45,
+  "avg_naive_tokens": 2683.25,
   "results": [
     {
       "query": "Where does the apple tree originally come from?",
@@ -13,11 +13,11 @@
       "hades_correct": true,
       "hades_tokens": 23,
       "retrieval_hit": true,
-      "naive_got": "The apple tree's origin is tied to human domestication, as mentioned in the text. While specific country details are not explicitly stated, the domestication of apple trees is a key aspect of human history, indicating their historical connection to agriculture and cultivation. The text highlights this evolutionary link, emphasizing how apple trees evolved through coevolution rather than a single geographical origin.",
+      "naive_got": "The apple tree originated in human domestication, not the other way around. This information is found in the text, which discusses how humans domesticated the apple tree to maintain autumn colors through coevolution. This indicates that the apple tree's origin is tied to human activity rather than the tree itself.",
       "naive_correct": false,
-      "naive_tokens": 4583,
+      "naive_tokens": 4570,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "What percentage of global apple production does China account for in 2013?",
@@ -26,11 +26,11 @@
       "hades_correct": true,
       "hades_tokens": 6,
       "retrieval_hit": true,
-      "naive_got": "The provided information does not mention China's apple production in 2013. All relevant data is from 2021 and 2022, making it impossible to determine the percentage based on the given text.",
+      "naive_got": "There is no specific information provided in the text about China's apple production in 2013. The text mentions global apple production trends in 2021 and 2022, but does not provide data for 2013. Therefore, the question cannot be answered with the given information.",
       "naive_correct": false,
-      "naive_tokens": 4551,
+      "naive_tokens": 4567,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "What chemical in apple seeds can release cyanide?",
@@ -39,11 +39,11 @@
       "hades_correct": true,
       "hades_tokens": 15,
       "retrieval_hit": true,
-      "naive_got": "The chemical in apple seeds that can release cyanine is **not present** in typical apple seeds. Apple seeds contain natural sugars, such as glucose, which are high in calories and contribute to the fruit's sweetness. Cyanine is a cyanide derivative and is typically found in certain plant species, not in apples. Therefore, there is no chemical in apple seeds that releases cyanine.",
+      "naive_got": "The chemical in apple seeds that can release cyanide is **silymarin**. Silymarin is a known cyanogenic compound in plants, particularly in seeds like sorghum seeds. It is responsible for the release of cyanide in these structures.",
       "naive_correct": false,
-      "naive_tokens": 4587,
+      "naive_tokens": 4563,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "What was the total worldwide apple production in 2013?",
@@ -52,11 +52,11 @@
       "hades_correct": true,
       "hades_tokens": 17,
       "retrieval_hit": true,
-      "naive_got": "The provided information does not include total worldwide apple production in 2013. The latest data referenced is from 2022, which may not align with the user's request. For accurate information, it is recommended to consult the original sources or the most recent agricultural statistics available.",
+      "naive_got": "The provided information does not include any specific data for the total worldwide apple production in 2013. The text references recent years (2021, 2022) and mentions global top producers, but there is no historical data for 2013. If you need this information, please consult a more detailed source or database.",
       "naive_correct": false,
-      "naive_tokens": 4565,
+      "naive_tokens": 4575,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "Who wrote the Prose Edda that mentions the goddess Idunn?",
@@ -65,11 +65,11 @@
       "hades_correct": true,
       "hades_tokens": 8,
       "retrieval_hit": true,
-      "naive_got": "The Prose Edda is traditionally attributed to the poet **\u00d3\u00f0ind**. In the Prose Edda, the story of **Idunn** (the goddess of the sky and the sun) is mentioned, which is a key part of the Norse mythos. However, the exact source of this story is traditionally attributed to **\u00d3\u00f0ind**, who composed the Prose Edda.",
+      "naive_got": "The Prose Edda that mentions the goddess Idunn is attributed to the ancient Norse poet **\u00d3\u00f0ist**. This work is one of the oldest known literary works of literature, and it features the goddess Idunn as part of its mythology.",
       "naive_correct": false,
-      "naive_tokens": 4590,
+      "naive_tokens": 4560,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "When was the first apple orchard in North America established?",
@@ -78,11 +78,11 @@
       "hades_correct": true,
       "hades_tokens": 17,
       "retrieval_hit": true,
-      "naive_got": "The first apple orchard in North America was likely established around the time the U.S. Department of Agriculture (USDA) ERS (United States Department of Agriculture) website was accessible, as indicated in the provided information. However, the exact establishment date is not explicitly stated in the text. The ERS data archive is referenced, which likely includes historical information about orchard development in the region. Since the question asks for the establishment date and the provided text does not specify it directly, the answer is inferred from the context of the ERS data archive, which is an archive of historical production information. Therefore, the establishment date is tied to the time when the ERS data was made available. \n\n**Answer:** The first apple orchard in North America was established when the U.S. Department of Agriculture ERS website was accessible, as indicated by the provided information.",
+      "naive_got": "The establishment of the first apple orchard in North America is not explicitly mentioned in the provided text. However, the text references U.S. Apple production data, which indicates that apple orchards were present in the U.S. in the early 20th century. While the exact year is not specified, the data from the U.S. Department of Agriculture (ERS) shows that apple production was significant in the region. If you're looking for the establishment year, the text does not provide a specific date, and the U.S. Apple production data is available for reference.",
       "naive_correct": false,
-      "naive_tokens": 4685,
+      "naive_tokens": 4625,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "What is the scientific name of the cultivated apple species?",
@@ -95,7 +95,7 @@
       "naive_correct": true,
       "naive_tokens": 4526,
       "domain": "Apple",
-      "doc": "Apple-1.pdf"
+      "doc": "data/Apple-1.pdf"
     },
     {
       "query": "What was Nvidia's revenue in Q1 of FY25?",
@@ -104,24 +104,24 @@
       "hades_correct": true,
       "hades_tokens": 4,
       "retrieval_hit": true,
-      "naive_got": "The document states that NVIDIA's revenue in Q1 of FY25 was **$26 billion**.",
+      "naive_got": "The document states that NVIDIA's revenue in Q1 of FY25 was **$26 billion**. \n\nAnswer: **$26 billion**.",
       "naive_correct": true,
-      "naive_tokens": 908,
+      "naive_tokens": 917,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "How many employees does Nvidia have?",
       "expected": "31,000+",
-      "hades_got": "NVIDIA has **31,000+ employees** in 36 countries.",
+      "hades_got": "NVIDIA has 31,000+ employees.",
       "hades_correct": true,
-      "hades_tokens": 15,
+      "hades_tokens": 10,
       "retrieval_hit": true,
-      "naive_got": "NVIDIA has 31,000+ employees in 36 countries.",
+      "naive_got": "NVIDIA has **31,000+ employees in 36 countries**.",
       "naive_correct": true,
-      "naive_tokens": 902,
+      "naive_tokens": 903,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "When was Nvidia founded?",
@@ -130,11 +130,11 @@
       "hades_correct": true,
       "hades_tokens": 9,
       "retrieval_hit": true,
-      "naive_got": "NVIDIA was founded in **1993**.",
+      "naive_got": "NVIDIA was founded in 1993.",
       "naive_correct": true,
-      "naive_tokens": 898,
+      "naive_tokens": 897,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "How many developers are in the NVIDIA Developer Program?",
@@ -143,50 +143,50 @@
       "hades_correct": true,
       "hades_tokens": 9,
       "retrieval_hit": true,
-      "naive_got": "The document states that \"Over 400,000 individual developers are using NVIDIA Omniverse[\u2122] at over 16,000 companies.\" Therefore, the number of developers in the NVIDIA Developer Program is **400,000**.",
+      "naive_got": "The number of developers using NVIDIA Omniverse[\u2122] is 400,000. Therefore, the answer is **400,000 developers**.",
       "naive_correct": false,
-      "naive_tokens": 934,
+      "naive_tokens": 917,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "How many companies use NVIDIA AI technology to power AI factories?",
       "expected": "40,000",
-      "hades_got": "The number of companies using NVIDIA AI technology to power AI factories is 40,000.",
+      "hades_got": "The number of companies using NVIDIA AI technology to power AI factories is 40,000.  \n\nThe CLAIMS line:  \n- {\"tool\": \"cache_hit\", \"keyword\": \"AI Factories\"}",
       "hades_correct": true,
-      "hades_tokens": 18,
+      "hades_tokens": 41,
       "retrieval_hit": true,
-      "naive_got": "The document states that \"More than 40,000 companies use NVIDIA AI technology to power AI factories.\" Therefore, the number of companies using NVIDIA AI technology for AI factories is **40,000**.",
+      "naive_got": "The document states that \"More than 40,000 companies use NVIDIA AI technology to power AI factories.\" Therefore, the number of companies is **40,000**.",
       "naive_correct": true,
-      "naive_tokens": 929,
+      "naive_tokens": 922,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "How many global startups are in NVIDIA Inception?",
       "expected": "19,000",
-      "hades_got": "The answer is 19,000.",
+      "hades_got": "19,000 global startups in NVIDIA Inception.",
       "hades_correct": true,
-      "hades_tokens": 8,
+      "hades_tokens": 10,
       "retrieval_hit": true,
-      "naive_got": "The document states that there are **19,000 global startups** in NVIDIA Inception.",
+      "naive_got": "The document states that \"19,000 global startups in NVIDIA Inception\" as per the provided information. Therefore, the answer is 19,000.",
       "naive_correct": true,
-      "naive_tokens": 906,
+      "naive_tokens": 919,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "Who is the Founder and CEO of NVIDIA?",
       "expected": "Jensen Huang",
-      "hades_got": "Jensen Huang.",
+      "hades_got": "Jensen Huang is the Founder and CEO of NVIDIA.",
       "hades_correct": true,
-      "hades_tokens": 4,
+      "hades_tokens": 11,
       "retrieval_hit": true,
       "naive_got": "The Founder and CEO of NVIDIA is **Jensen Huang**.",
       "naive_correct": true,
       "naive_tokens": 901,
       "domain": "Nvidia",
-      "doc": "corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
     },
     {
       "query": "What is the name of the new simple network architecture proposed in the paper?",
@@ -195,24 +195,24 @@
       "hades_correct": true,
       "hades_tokens": 13,
       "retrieval_hit": true,
-      "naive_got": "The new simple network architecture proposed in the paper is **the Transformer**.",
+      "naive_got": "The new simple network architecture proposed in the paper is called the **Transformer**.",
       "naive_correct": true,
-      "naive_tokens": 2520,
+      "naive_tokens": 2521,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     },
     {
       "query": "What does the Transformer dispense with entirely?",
       "expected": "recurrence and convolutions",
-      "hades_got": "The Transformer dispenses with recurrence and convolutions entirely.",
+      "hades_got": "The Transformer dispenses with recurrence and convolution entirely.",
       "hades_correct": true,
-      "hades_tokens": 11,
+      "hades_tokens": 10,
       "retrieval_hit": true,
       "naive_got": "The Transformer dispenses with recurrence and convolutions entirely. It relies solely on attention mechanisms to model dependencies between input and output sequences.",
       "naive_correct": true,
       "naive_tokens": 2531,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     },
     {
       "query": "What is the BLEU score achieved by the model on the WMT 2014 English-to-German translation task?",
@@ -221,24 +221,24 @@
       "hades_correct": true,
       "hades_tokens": 27,
       "retrieval_hit": true,
-      "naive_got": "The model achieved a BLEU score of **28.4** on the WMT 2014 English-to-German translation task. This improvement over existing results, including ensembles, is noted in the abstract.",
-      "naive_correct": true,
-      "naive_tokens": 2548,
+      "naive_got": "The model achieved a BLEU score of **41.0** on the WMT 2014 English-to-German translation task after training for 3.5 days on eight GPUs.",
+      "naive_correct": false,
+      "naive_tokens": 2543,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     },
     {
       "query": "How many days was the model trained for on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task?",
       "expected": "3.5 days",
-      "hades_got": "The model was trained for 3.5 days on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task.",
+      "hades_got": "3.5",
       "hades_correct": true,
-      "hades_tokens": 40,
+      "hades_tokens": 3,
       "retrieval_hit": true,
-      "naive_got": "The model was trained for **3.5 days** on eight GPUs to establish a new single-model state-of-the-art BLEU score of 41.0 on the WMT 2014 English-to-French translation task.",
+      "naive_got": "The model was trained for **3.5 days** on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task.",
       "naive_correct": true,
-      "naive_tokens": 2551,
+      "naive_tokens": 2546,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     },
     {
       "query": "What attention mechanism outperforms dot product attention without scaling for larger values of dk?",
@@ -247,24 +247,24 @@
       "hades_correct": false,
       "hades_tokens": 0,
       "retrieval_hit": true,
-      "naive_got": "The attention mechanism that outperforms dot product attention without scaling for larger values of $ dk $ is **additive attention**. This is supported by the document, which states that additive attention performs better than dot product without scaling for larger $ dk $.",
+      "naive_got": "The attention mechanism that outperforms dot product attention without scaling for larger values of $ dk $ is **additive attention**.",
       "naive_correct": true,
-      "naive_tokens": 2555,
+      "naive_tokens": 2531,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     },
     {
       "query": "What is used instead of performing a single attention function with dmodel-dimensional keys, values and queries?",
       "expected": "Multi-Head Attention",
-      "hades_got": "The mechanism used instead of a single attention function with dmodel-dimensional keys, values, and queries is linear projections with learned linear projections to dk, dk, and dv dimensions.",
+      "hades_got": "The multi-head attention mechanism outperforms dot product attention without scaling for larger values of dk.",
       "hades_correct": true,
-      "hades_tokens": 35,
+      "hades_tokens": 19,
       "retrieval_hit": true,
-      "naive_got": "The question asks what is used instead of performing a single attention function with $ d_{\\text{model}} $-dimensional keys, values, and queries. According to the document, they use **Multi-Head Attention** instead. \n\nAnswer: **Multi-Head Attention**.",
+      "naive_got": "The single attention function is replaced by **Multi-Head Attention**. This is explicitly stated in the document: \"We compute the matrix of outputs as: Scaled Dot-Product Attention. Instead of performing a single attention function with $ d_{\\text{model}} $-dimensional keys, values, and queries, we found it beneficial to linearly project the queries, keys, and values $ h $ times with different, learned linear projections to $ d_{\\text{model}} $, $ d_{\\text{model}} $, and $ d_{\\text{model}} $-dimensional outputs.\"",
       "naive_correct": true,
-      "naive_tokens": 2563,
+      "naive_tokens": 2631,
       "domain": "NIPS",
-      "doc": "NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
     }
   ]
 }

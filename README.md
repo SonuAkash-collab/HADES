@@ -73,9 +73,9 @@ The table below compares HADES (Qwen3:0.6b) against a standard **Naive RAG** bas
 | Metric | Naive RAG (Baseline) | HADES (Qwen3:0.6b) | Efficiency / Accuracy Gain |
 | :--- | :--- | :--- | :--- |
 | **Retrieval Hit Rate** | N/A | **100.0%** | Deterministic Fact Retrieval |
-| **Synthesis Accuracy** | 65.0% | **90.0%** | +25.0% Factual Fidelity |
-| **Avg. Tokens per Query** | ~2,697 | **14.8** | ~182x Token Reduction |
-| **Efficiency Gain** | 1x | **~180x** | Sub-linear Scaling Efficiency |
+| **Synthesis Accuracy** | 60.0% | **90.0%** | +30.0% Factual Fidelity |
+| **Avg. Tokens per Query** | ~2,683 | **13.4** | ~200x Token Reduction |
+| **Efficiency Gain** | 1x | **~200x** | Sub-linear Scaling Efficiency |
 
 ### 2. System Requirements & Latency
 
@@ -178,7 +178,7 @@ Note: First run downloads REBEL and DeBERTa weights (~600MB total). Subsequent r
 | Metric | HADES v1.0 | Naive RAG (Baseline) | Efficiency Gain |
 | :--- | :--- | :--- | :--- |
 | **Retrieval Hit Rate** | **100%** | N/A | **No Edge Blindness** |
-| **Synthesis Accuracy** | **80%** | 60% | **+20% Factual Fidelity** |
+| **Synthesis Accuracy** | **90%** | 60% | **+30% Factual Fidelity** |
 | **Avg Tokens / Query** | **13.4** | ~2,683 | **~200x Fewer Tokens** |
 | **Model Footprint** | **0.6B Parameters** | N/A | **Edge-Device Ready** |
 
