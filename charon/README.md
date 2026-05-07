@@ -23,23 +23,9 @@ If the L1 cache budget (e.g., 150 tokens) is too small to contain the answer, th
 
 ---
 
-## Benchmark Analysis: The 8-Case QA Suite
+## Benchmark Analysis
+Note: For the finalized v1.0 global performance metrics across our multi-document evaluation suite, please refer to the [Main Repository README](../README.md).
 
-The Charon benchmark evaluates the system's ability to answer high-precision questions using only compressed context.
-
-### Case Selection Strategy
-*   **Technical (ATP/Mitochondria, CRISPR)**: Tests the system's ability to preserve complex scientific terminology.
-*   **Historic (Caesar, Apollo 11)**: Tests proper noun preservation (Rubicon, Michael Collins).
-*   **Numeric (NVIDIA Revenue, Interest Rates)**: Tests the most difficult dimension—preserving exact figures during prose condensation.
-*   **Abstract (Transformers/Attention)**: Tests conceptual understanding.
-
-### Result Analysis
-| Metric | Score | Impact |
-| :--- | :--- | :--- |
-| **Accuracy** | **100.0%** | The combination of Top-3 REBEL extraction and Source Fallback ensures no "hallucination of omission." |
-| **SDpT Improvement** | **+7.89** | Indicates that the compressed text contains 7.89 more facts per 100 tokens than the original raw text. |
-
-**Significant Discovery**: The system achieved a **97.1% reduction** on the Apple Wikipedia article. This demonstrates that for large datasets, the PageRank filter effectively prunes "fluff" while the Hierarchical Recall ensures technical precision is maintained.
 
 ## Running the Benchmark
 

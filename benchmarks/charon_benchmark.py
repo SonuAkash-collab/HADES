@@ -134,7 +134,7 @@ def os_generate_response(
 ) -> str:
     """Orchestrates the response generation using the verified hardware gate."""
     import ollama
-    OLLAMA_MODEL = "qwen2.5:1.5b"
+    OLLAMA_MODEL = "qwen3:0.6b"
     
     # 1. L1 Lookup - Modern HADES threshold (0.50 for MS-MARCO Cross-Encoder)
     from charon.core.semantic_arbitrator import _sigmoid, _load_cross_encoder
@@ -390,7 +390,7 @@ def main() -> int:
     import json, datetime
     results_summary = {
         "timestamp": datetime.datetime.now().isoformat(),
-        "model": "qwen2.5:1.5b",
+        "model": "qwen3:0.6b",
         "extractor": "REBEL (source) + Cerberus (verification)",
         "total_cases": len(rows),
         "accuracy": sum(1 for r in rows if r["accuracy"]) / len(rows),

@@ -1,6 +1,6 @@
 {
   "timestamp": "2026-05-05T04:15:43.116705",
-  "model": "qwen2.5:1.5b",
+  "model": "qwen3:0.6b",
   "extractor": "REBEL (source) + Cerberus (verification)",
   "total_cases": 8,
   "accuracy": 1.0,

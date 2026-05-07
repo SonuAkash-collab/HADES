@@ -235,6 +235,14 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
 
 @lru_cache(maxsize=1)
 def _load_nli_model(model_name: str):
+    import streamlit as st
+    
+    # NEW LOGGING STATEMENTS
+    print(f"DeBERTa loaded into memory: {model_name}")
+    if st.runtime.exists():
+        if "telemetry" in st.session_state:
+            st.session_state.telemetry.setdefault("memory_faults", []).append(f"Model Initialized: {model_name} loaded into memory")
+            
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)

@@ -61,7 +61,8 @@ if st.runtime.exists():
 SYSTEM_INSTRUCTION = """You are the HADES NMMU. Answer questions using the provided Facts.
 
 MODE 1 — CACHE HIT:
-  Use this if the Facts contain the answer. 
+  Use this if the Facts contain the answer. Output ONLY plain text prose.
+  DO NOT use any JSON, tool calls, or formatting like {"tool": ...} for a cache hit.
   Example:
   The apple tree originates from Kazakhstan.
   CLAIMS: [{"s": "apple tree", "v": "originates from", "o": "Kazakhstan"}]
@@ -76,9 +77,10 @@ Rules:
 3. Prose answer must come BEFORE the CLAIMS line.
 4. NEVER repeat the user's question. If you don't know, use MODE 2.
 5. Combine information from multiple facts if necessary to deduce the answer.
-6. If still no answer after searching, say 'INSUFFICIENT DATA'."""
+6. If still no answer after searching, say 'INSUFFICIENT DATA'.
+7. CRITICAL: NEVER output '{"tool": "cache_hit"...}'. That tool does not exist. If you have the answer, just say it as plain text."""
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
 OLLAMA_OPTIONS = {
     "temperature": 0.0,
     "num_predict": 512,  # Increased to prevent truncating complex tool payloads
@@ -96,7 +98,7 @@ def _init_session_state() -> None:
     desired_system_budget = _required_system_budget()
 
     if "selected_model" not in st.session_state:
-        st.session_state.selected_model = "qwen2.5:1.5b"
+        st.session_state.selected_model = "qwen3:0.6b"
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -346,15 +348,29 @@ def _build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[
 
 
 def _call_policy_model(messages: list[dict[str, str]]) -> str:
+    model_name = st.session_state.get("selected_model", OLLAMA_MODEL)
     request_messages = [dict(message) for message in messages]
+    
+    # --- NEW: Qwen3 Thinking Suppression ---
+    if "qwen3" in model_name:
+        for msg in request_messages:
+            if msg["role"] == "system":
+                msg["content"] += "\nCRITICAL INSTRUCTION: DO NOT output <think> tags. Do not explain your reasoning. Output only the final formatted answer immediately."
+                break
+    # ---------------------------------------
+    
     request_messages.append({"role": "assistant", "content": ""})
 
     response = ollama.chat(
-        model=st.session_state.get("selected_model", OLLAMA_MODEL),
+        model=model_name,
         messages=request_messages,
         options=OLLAMA_OPTIONS,
     )
     content = response.get("message", {}).get("content", "").strip()
+    
+    # Clean up <think> tags just in case the model disobeys the system prompt
+    import re
+    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
     
     # Robust sanitation: remove any mode-locking prefixes
     content = re.sub(r"^(MODE\s*\d.*?CACHE\s*HIT\s*:\s*|MODE\s*\d.*?:\s*|CACHE\s*(HIT|MISS).*?:\s*)", "", content, flags=re.IGNORECASE).strip()
@@ -627,13 +643,13 @@ def _render_sidebar() -> None:
         )
         selected = st.selectbox(
             label="model",
-            options=["qwen2.5:1.5b", "phi3.5", "llama3.2:3b"],
-            index=["qwen2.5:1.5b", "phi3.5", "llama3.2:3b"].index(
-                st.session_state.get("selected_model", "qwen2.5:1.5b")
+            options=["qwen3:0.6b", "phi3.5", "llama3.2:3b"],
+            index=["qwen3:0.6b", "phi3.5", "llama3.2:3b"].index(
+                st.session_state.get("selected_model", "qwen3:0.6b")
             ),
             label_visibility="collapsed",
             help=(
-                "qwen2.5:1.5b — fastest, best JSON compliance\n"
+                "qwen3:0.6b — maximum accessibility, fix instruction failures\n"
                 "phi3.5 — better reasoning, slower\n"
                 "llama3.2:3b — balanced, requires more RAM"
             ),
@@ -806,7 +822,13 @@ def _chat_loop(prompt: str) -> str:
         pairs = [[prompt, f] for f in combined]
         scores = ce.predict(pairs)
         scored_facts = sorted(zip(combined, scores), key=lambda x: x[1], reverse=True)
+        # These are the top facts actually handed to the LLM
         forced_facts = [f for f, s in scored_facts[:5]]
+
+    # --- 1. LOG INITIAL RETRIEVAL HITS ---
+    if st.session_state.telemetry.get("l1_status") == "benchmark":
+        st.session_state.telemetry.setdefault("retrieved_triples", []).extend(forced_facts)
+    # -------------------------------------
 
     conversation = _build_partitioned_messages(cache, prompt, forced_facts=forced_facts)
     content = _call_policy_model(conversation)
@@ -836,6 +858,11 @@ def _chat_loop(prompt: str) -> str:
                     tool_output = f"No memory hit for keyword: {keyword}"
                     fault_line = f"RE-SEARCH MISS | keyword='{keyword}'"
 
+            # --- 2. LOG RE-SEARCH TOOL HITS ---
+            if st.session_state.telemetry.get("l1_status") == "benchmark" and tool_output and not tool_output.startswith("No memory hit"):
+                st.session_state.telemetry.setdefault("retrieved_triples", []).append(tool_output)
+            # ----------------------------------
+
             _push_telemetry_item("memory_faults", fault_line)
             cache.add_tool_result("search_memory", tool_output)
 
@@ -860,64 +887,38 @@ def _chat_loop(prompt: str) -> str:
     return final_answer
 
 
-def render_graph_visual(source_graph) -> str:
-    """Build a PyVis interactive graph from the L2 SourceGraph.
+def render_graph_visual(source_graph) -> bytes:
+    """Build a static Matplotlib graph from the L2 SourceGraph.
 
     Nodes are sized by PageRank and colored by Cerberus verification
     status: green = Clean, red = Dirty, blue = unverified.
-    Returns the generated HTML as a string.
+    Returns the generated PNG image as bytes.
     """
-    net = Network(
-        height="750px",
-        width="100%",
-        directed=True,
-        bgcolor="#0e1117",
-        font_color="#fafafa",
-    )
-    net.set_options("""
-    {
-      "physics": {
-        "enabled": true,
-        "solver": "forceAtlas2Based",
-        "forceAtlas2Based": {
-          "gravitationalConstant": -80,
-          "centralGravity": 0.01,
-          "springLength": 120,
-          "springConstant": 0.06,
-          "damping": 0.5
-        },
-        "stabilization": {
-          "enabled": true,
-          "iterations": 200,
-          "updateInterval": 25
-        },
-        "minVelocity": 0.75
-      },
-      "edges": {
-        "color": { "color": "#3d3d5c", "highlight": "#4d9fff" },
-        "font": { "size": 9, "color": "#555570", "face": "IBM Plex Mono" },
-        "smooth": { "type": "continuous" },
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.5 } },
-        "width": 1
-      },
-      "nodes": {
-        "shape": "dot",
-        "font": { "size": 11, "face": "IBM Plex Mono" }
-      },
-      "interaction": {
-        "hover": true,
-        "tooltipDelay": 100,
-        "hideEdgesOnDrag": true,
-        "navigationButtons": false
-      }
-    }
-    """)
+    import networkx as nx
+    import io
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend for Streamlit
+    import matplotlib.pyplot as plt
 
     graph: nx.DiGraph = source_graph.graph
 
+    # If graph is too large, sample it down to prevent hairball rendering
+    if graph.number_of_nodes() > 150:
+        try:
+            pr = nx.pagerank(graph)
+            top_nodes = sorted(pr, key=pr.get, reverse=True)[:150]
+            subgraph = graph.subgraph(top_nodes)
+        except Exception:
+            subgraph = graph
+    else:
+        subgraph = graph
+
+    # Calculate layout using NetworkX
+    pos = nx.spring_layout(subgraph, k=0.5, iterations=50)
+
     # ── PageRank scores for node sizing ──
     try:
-        pr_scores = nx.pagerank(graph)
+        pr_scores = nx.pagerank(subgraph)
     except Exception:
         pr_scores = {}
 
@@ -934,7 +935,6 @@ def render_graph_visual(source_graph) -> str:
             status = "dirty"
         else:
             continue
-        # Extract the triple text between the first and second "|"
         parts = entry.split("|")
         if len(parts) >= 2:
             triple_text = parts[1].strip()
@@ -948,49 +948,67 @@ def render_graph_visual(source_graph) -> str:
     COLOR_DIRTY = "#ff1744"   # red
     COLOR_DEFAULT = "#448aff" # high-contrast blue
 
-    # ── Add nodes ──
-    for node in graph.nodes:
+    node_colors = []
+    node_sizes = []
+    labels = {}
+
+    for node in subgraph.nodes:
         label = str(node)
         pr = pr_scores.get(node, 0.0)
-        size = 10 + 40 * (pr / max_pr) if max_pr else 15
+        
+        # Scale sizes for matplotlib
+        size = 100 + 1000 * (pr / max_pr) if max_pr else 300
+        node_sizes.append(size)
 
-        # Determine color from Cerberus status
         status = node_status.get(label)
         if status == "clean":
-            color = COLOR_CLEAN
+            node_colors.append(COLOR_CLEAN)
         elif status == "dirty":
-            color = COLOR_DIRTY
+            node_colors.append(COLOR_DIRTY)
         else:
-            color = COLOR_DEFAULT
+            node_colors.append(COLOR_DEFAULT)
 
-        # Truncate long labels for clean display
-        display_label = label if len(label) <= 20 else label[:18] + "…"
-        
-        net.add_node(
-            label,
-            label=display_label,
-            size=size,
-            color=color,
-            title=f"{label}\nPageRank: {pr:.4f}",  # full text on hover
-            font={"size": 11, "color": "#e8e8f0", "face": "IBM Plex Mono"},
-            borderWidth=1,
-            borderWidthSelected=2,
-        )
+        labels[node] = label if len(label) <= 15 else label[:13] + "…"
 
-    # ── Add edges ──
-    for src, dst, data in graph.edges(data=True):
-        verb = str((data or {}).get("verb", "")).strip()
-        net.add_edge(str(src), str(dst), label=verb, title=verb)
+    # ── Plotting ──
+    fig, ax = plt.subplots(figsize=(10, 7))
+    fig.patch.set_facecolor('#0e1117')
+    ax.set_facecolor('#0e1117')
 
-    # ── Write to temporary HTML file and return contents ──
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".html", delete=False, encoding="utf-8"
-    ) as tmp:
-        net.save_graph(tmp.name)
-        tmp_path = tmp.name
+    nx.draw_networkx_edges(
+        subgraph, pos, ax=ax,
+        edge_color="#3d3d5c",
+        arrows=True,
+        arrowsize=12,
+        alpha=0.6,
+        node_size=node_sizes,
+    )
 
-    with open(tmp_path, "r", encoding="utf-8") as fh:
-        return fh.read()
+    nx.draw_networkx_nodes(
+        subgraph, pos, ax=ax,
+        node_color=node_colors,
+        node_size=node_sizes,
+        edgecolors="#e8e8f0",
+        linewidths=0.5
+    )
+
+    nx.draw_networkx_labels(
+        subgraph, pos, labels=labels, ax=ax,
+        font_size=8,
+        font_color="#fafafa",
+        font_family="sans-serif"
+    )
+
+    plt.axis("off")
+    plt.tight_layout()
+
+    # Save to buffer and return bytes
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", facecolor=fig.get_facecolor(), dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    
+    return buf.getvalue()
 
 
 def main() -> None:
@@ -1325,10 +1343,12 @@ h1 {
             # Only re-render if the source graph has changed
             current_pdf = st.session_state.loaded_pdf_name
             if st.session_state.graph_rendered_for != current_pdf:
-                st.session_state.graph_html = render_graph_visual(source_graph)
+                # Store the image bytes instead of HTML
+                st.session_state.graph_image = render_graph_visual(source_graph)
                 st.session_state.graph_rendered_for = current_pdf
 
-            components.html(st.session_state.graph_html, height=800, scrolling=True)
+            # Render the static image instantly
+            st.image(st.session_state.graph_image, use_container_width=True)
 
 
 if __name__ == "__main__":

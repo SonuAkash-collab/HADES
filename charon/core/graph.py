@@ -278,7 +278,7 @@ def merge_similar_nodes(
 
 def normalise_entities_with_llm(
     graph: nx.MultiDiGraph,
-    ollama_model: str = "qwen2.5:1.5b",
+    ollama_model: str = "qwen3:0.6b",
 ) -> tuple[nx.MultiDiGraph, int]:
     """
     Optional second-pass entity normalisation using a local LLM.

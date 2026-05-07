@@ -20,23 +20,9 @@ To prevent "Bit Rot" or unauthorized modifications to the knowledge base, Cerber
 
 ---
 
-## Benchmark Analysis: The Apple-1 PDF Suite
+## Benchmark Analysis
+Note: For the finalized v1.0 global performance metrics across our multi-document evaluation suite, please refer to the [Main Repository README](../README.md).
 
-The Cerberus benchmark uses the official Apple-1 manual and history as a source of truth. It contains 33 "Adversarial" cases designed to trick the verifier.
-
-### Difficulty Tiers
-*   **Easy**: Direct matches (e.g., "Wozniak designed the Apple-1").
-*   **Hard**: Paraphrased facts using synonyms or passive voice.
-*   **Adversarial**: Claims that look plausible but have one incorrect number (e.g., "Apple-1 sold for $665" instead of $666.66). 
-*   **Edge**: Multi-hop relations where the answer is split across two sentences.
-
-### Result Analysis
-| Metric | Score | Analysis |
-| :--- | :--- | :--- |
-| **Precision** | **85.2%** | Demonstrates high resistance to hallucinations. The verifier successfully caught nearly all adversarial numeric distortions. |
-| **Recall** | **79.3%** | Indicates that ~20% of true facts were rejected. This is often due to "Neutral" scores on complex sentences where the NLI model is overly cautious. |
-
-**Key Finding**: The verifier is tuned for **Safety Over Recall**. It is better to reject a true fact (Neutral) than to accept a false one (Entailment). This is a design requirement for the HADES "Verified Persistence" policy.
 
 ## Running the Benchmark
 

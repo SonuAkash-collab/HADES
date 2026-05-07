@@ -10,7 +10,7 @@ from shared.triple import KnowledgeTriple
 
 load_dotenv()
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
 
 
 def compress_triples(triples: list[KnowledgeTriple], max_items: int = 5) -> str:
