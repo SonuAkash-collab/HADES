@@ -70,13 +70,13 @@ The system was benchmarked across **20 rigorous test cases** distributed across 
 #### Comparative Performance Analysis
 The table below compares HADES against a standard **Naive RAG** baseline across two model scales.
 
-| Metric | Naive RAG (0.6B) | HADES (0.6B) | HADES (3B Llama) |
-| :--- | :--- | :--- | :--- |
-| **Retrieval Hit Rate** | N/A | **100.0%** | **100.0%** |
-| **Synthesis Accuracy** | 60.0% | **80.0% (90% Semantic)** | **95.0%** |
-| **Avg. Latency** | ~33.0s | **~2.5s** | **~23.0s** |
-| **Avg. Tokens per Query** | ~2,683 | **12.8** | **19.8** |
-| **Context Efficiency** | 1x | **210x** | **135x** |
+| Metric | Naive RAG (0.6B) | HADES (360M) | HADES (0.6B) | HADES (3B) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Retrieval Hit Rate** | N/A | **100.0%** | **100.0%** | **100.0%** |
+| **Synthesis Accuracy** | 60.0% | **65.0%** | **80.0% (90% S)** | **95.0%** |
+| **Avg. Latency** | ~33.0s | **~1.6s** | **~2.5s** | **~23.0s** |
+| **Avg. Tokens per Query** | ~2,683 | **19.2** | **12.8** | **19.8** |
+| **Context Efficiency** | 1x | **140x** | **210x** | **135x** |
 
 ### 2. System Requirements & Latency
 
