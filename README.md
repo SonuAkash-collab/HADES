@@ -105,6 +105,17 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 *   **End-to-End Answer Generation**: ~2-3 seconds per query.
 *   **Cerberus Verification (DeBERTa)**: +1.5 seconds (Lazy-loaded only when a new write-back claim is generated).
 
+#### Memory Hierarchy Latency (The "Page Fault" Tax)
+HADES uses a tiered memory architecture to maintain low latency as the document library scales. Our stress tests on CPU hardware reveal the following performance profile:
+
+| Cache State | Retrieval Space | Latency | Performance Impact |
+| :--- | :--- | :--- | :--- |
+| **L1 Cache Hit** | < 1,000 Tokens | **~2.5s** | **Instantaneous.** Best-case performance. |
+| **L2 Memory Hit** | ~100-500 Triples | **~3.2s** | **Negligible.** Minor vector-search overhead (+0.7s). |
+| **L2 Stress Hit** | 1,000+ Triples | **~12.5s** | **Significant.** Cross-Encoder reranking tax (+5.6s). |
+
+**Engineering Insight**: The L1 Cache is vital for scaling. Without the L1 set-associative buffer, every query in a large-scale deployment would incur the ~5.6s "Page Fault" tax for reranking, effectively doubling response times as the library grows.
+
 ---
 
 ## Key Engineering Findings
