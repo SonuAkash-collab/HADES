@@ -63,7 +63,7 @@ The HADES v1.0 architecture, leveraging the **Qwen3:0.6b** inference engine, has
 ### 1. End-to-End QA (Multi-Document Suite)
 
 The system was benchmarked across **20 rigorous test cases** distributed across three high-complexity domains:
-*   **Apple Inc. (Wikipedia)**: Technical corporate history and product evolution.
+*   **Apple (Botanical/Historical)**: Historical overview, production metrics (2013), and cultural significance of the *Malus domestica* species.
 *   **NVIDIA (FY24 Financials)**: High-precision corporate financial metrics and revenue data.
 *   **'Attention Is All You Need' (NeurIPS)**: Dense scientific literature regarding Transformer architectures.
 
