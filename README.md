@@ -110,13 +110,9 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 5. REBEL num_return_sequences=3 provides 3x graph coverage at the same inference cost compared to single-sequence decoding.
 6. **Cerberus Lazy-loading**: Cerberus verification models present a massive memory bottleneck. Implementing lazy-loading for the DeBERTa-v3-base cross-encoder ensures the system stays under 3GB RAM by only occupying memory when a write-back claim is generated.
 7. **Dual-Layer L2 Retrieval (Resilience)**: The L2 Knowledge Graph index implements a hybrid retrieval strategy. If REBEL fails to extract a specific triple, the system automatically falls back to a semantic search over raw source sentences indexed within the same vector space. This ensures 100% retrieval hit rates even in complex technical documents.
-<<<<<<< HEAD
 8. **Empty Generation Failure**: The 0.6B model occasionally returns empty strings on technical comparison queries even with a 100% retrieval hit. This indicates a "synthesis ceiling"—the retrieved triple contained the answer but the sub-billion model failed to synthesize a response.
 9. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
 10. **String-Match Sensitivity**: Accuracy metrics are conservative due to strict matching logic. Factual audit shows the 0.6B model achieves **90% semantic accuracy**, but was penalized for minor variations such as singular/plural forms ("convolution" vs "convolutions") and missing units ("3.5" vs "3.5 days").
-=======
-8. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
->>>>>>> beeffefaaddaa3d615ca81409e1aebfeebb52b3c
 
 ### Known Limitations (v1.0)
 - **Entity Disambiguation**: HADES does not currently distinguish between closely related entities with overlapping relationships. Disambiguation between ancestor and descendant species (e.g., *Malus sieversii* vs. *Malus domestica*) requires typed edges not present in this release.
