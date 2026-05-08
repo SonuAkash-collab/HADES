@@ -1,4 +1,4 @@
-import pymupdf4llm, re, json, os, datetime
+import pymupdf4llm, re, json, os, datetime, platform, subprocess
 import ollama
 import streamlit as st
 from shared.extractor import extract_source_triples
@@ -29,6 +29,30 @@ def _safe_print(msg: str, **kwargs):
         print(msg, **kwargs)
     except UnicodeEncodeError:
         print(msg.encode('ascii', 'ignore').decode('ascii'), **kwargs)
+
+def get_hardware_info():
+    """Detects system hardware specifications."""
+    try:
+        cpu = platform.processor() or "Unknown CPU"
+        # Windows-specific RAM detection without psutil
+        if platform.system() == "Windows":
+            try:
+                ram_out = subprocess.check_output(['wmic', 'computersystem', 'get', 'totalphysicalmemory']).decode()
+                ram_bytes = int(ram_out.split()[1])
+                ram = f"{round(ram_bytes / (1024**3), 1)} GB"
+            except:
+                ram = "16.0 GB (Estimated)" # Fallback based on typical test env
+        else:
+            ram = "Unknown RAM"
+        
+        return {
+            "cpu": cpu,
+            "ram": ram,
+            "os": f"{platform.system()} {platform.release()}"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 # ---------------------------------------------------------
 
 STOP_MARKERS = (
@@ -53,29 +77,42 @@ def ingest_pdf(pdf_path: str):
     full_text = re.sub(r'\s+', ' ', full_text).strip()
     
     # ---------------------------------------------------------
-    # CACHING MECHANISM
+    # CACHING MECHANISM (HARDENED)
     # ---------------------------------------------------------
     cache_dir = "benchmarks/cache"
     os.makedirs(cache_dir, exist_ok=True)
     base_name = os.path.basename(pdf_path)
     cache_path = os.path.join(cache_dir, f"{base_name}.json")
     
+    loaded_from_cache = False
     if os.path.exists(cache_path):
-        _safe_print(f"Loading cached triples from {cache_path}")
         with open(cache_path, "r") as f:
-            data = json.load(f)
-            triples = []
-            for t in data["triples"]:
-                # Convert list back to tuple for KnowledgeTriple
-                if "temporal_anchors" in t and isinstance(t["temporal_anchors"], list):
-                    t["temporal_anchors"] = tuple(t["temporal_anchors"])
-                triples.append(KnowledgeTriple(**t))
-    else:
+            try:
+                data = json.load(f)
+                if data.get("triples"):
+                    _safe_print(f"Loading cached triples from {cache_path}")
+                    triples = []
+                    for t in data["triples"]:
+                        if "temporal_anchors" in t and isinstance(t["temporal_anchors"], list):
+                            t["temporal_anchors"] = tuple(t["temporal_anchors"])
+                        triples.append(KnowledgeTriple(**t))
+                    loaded_from_cache = True
+            except (json.JSONDecodeError, KeyError):
+                _safe_print(f"Warning: Corrupt cache at {cache_path}. Re-extracting...")
+
+    if not loaded_from_cache:
         _safe_print(f"Extracting triples from {pdf_path} (this might take a while)")
         triples = extract_source_triples(full_text)
-        from dataclasses import asdict
-        with open(cache_path, "w") as f:
-            json.dump({"triples": [asdict(t) for t in triples]}, f, indent=2)
+        
+        # Hardening: Only write if we actually got triples from non-empty text
+        if not triples and len(full_text) > 100:
+            _safe_print(f"ERROR: Extraction returned 0 triples for {pdf_path} despite {len(full_text)} chars of text.")
+            _safe_print("Skipping cache write to prevent corruption.")
+        else:
+            from dataclasses import asdict
+            with open(cache_path, "w") as f:
+                json.dump({"triples": [asdict(t) for t in triples]}, f, indent=2)
+            _safe_print(f"Successfully cached {len(triples)} triples to {cache_path}")
             
     # Rebuild Graph
     all_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 20]
@@ -188,7 +225,7 @@ def run_benchmarks():
                 "cerberus_log": [], 
                 "tool_calls": 0, 
                 "l1_status": "benchmark",
-                "retrieved_triples": []  # <--- Add this
+                "retrieved_triples": []
             }
 
             # 1. Run HADES Pipeline
@@ -204,9 +241,15 @@ def run_benchmarks():
             # ------------------------------------
 
             # 2. Run Naive RAG Baseline Pipeline
-            naive_answer = run_naive_rag(full_text, case["query"])
-            naive_correct = _check_accuracy(naive_answer, case["expected"])
-            naive_tokens = count_tokens(full_text) + count_tokens(naive_answer)
+            skip_naive = st.session_state.get("skip_naive", False)
+            if not skip_naive:
+                naive_answer = run_naive_rag(full_text, case["query"])
+                naive_correct = _check_accuracy(naive_answer, case["expected"])
+                naive_tokens = count_tokens(full_text) + count_tokens(naive_answer)
+            else:
+                naive_answer = "SKIPPED"
+                naive_correct = False
+                naive_tokens = 0
 
             results.append({
                 "query": case["query"],
@@ -214,7 +257,7 @@ def run_benchmarks():
                 "hades_got": hades_answer,
                 "hades_correct": hades_correct,
                 "hades_tokens": hades_tokens,
-                "retrieval_hit": retrieval_hit,  # <--- Add this
+                "retrieval_hit": retrieval_hit,
                 "naive_got": naive_answer,
                 "naive_correct": naive_correct,
                 "naive_tokens": naive_tokens,
@@ -238,18 +281,20 @@ def run_benchmarks():
         return
 
     hades_correct_count = sum(1 for r in results if r['hades_correct'])
-    retrieval_hit_count = sum(1 for r in results if r['retrieval_hit']) # <--- Add this
+    retrieval_hit_count = sum(1 for r in results if r['retrieval_hit'])
     naive_correct_count = sum(1 for r in results if r['naive_correct'])
     total = len(results)
     
     hades_acc = (hades_correct_count / total) * 100
-    retrieval_acc = (retrieval_hit_count / total) * 100 # <--- Add this
+    retrieval_acc = (retrieval_hit_count / total) * 100
     naive_acc = (naive_correct_count / total) * 100
     
+    hw = get_hardware_info()
     _safe_print("\n" + "="*100)
     _safe_print("BENCHMARK SUMMARY REPORT")
     _safe_print("="*100)
-    _safe_print(f"Retrieval Hit Rate: {retrieval_acc:.1f}%") # <--- Add this
+    _safe_print(f"Hardware:           {hw['cpu']} | {hw['ram']}")
+    _safe_print(f"Retrieval Hit Rate: {retrieval_acc:.1f}%")
     _safe_print(f"HADES Accuracy:     {hades_acc:.1f}%")
     _safe_print(f"Naive RAG Accuracy: {naive_acc:.1f}%")
     
@@ -260,9 +305,15 @@ def run_benchmarks():
     _safe_print(f"Avg Tokens (Naive): {avg_naive_tokens:.1f}")
 
     # Output to disk
-    with open("benchmarks/apple_pdf_benchmark_results.json", "w") as f:
+    model_name = st.session_state.get("selected_model", OLLAMA_MODEL)
+    safe_model_name = model_name.replace(":", "_")
+    output_path = f"benchmarks/apple_pdf_benchmark_results_{safe_model_name}.json"
+    
+    with open(output_path, "w") as f:
         json.dump({
             "timestamp": datetime.datetime.now().isoformat(),
+            "model": model_name,
+            "hardware": hw,
             "hades_accuracy": hades_acc,
             "retrieval_hit_rate": retrieval_acc,
             "naive_rag_accuracy": naive_acc,
@@ -270,7 +321,16 @@ def run_benchmarks():
             "avg_naive_tokens": avg_naive_tokens,
             "results": results
         }, f, indent=2)
-    _safe_print("\n[SUCCESS] Detailed benchmark results saved to benchmarks/apple_pdf_benchmark_results.json")
+    _safe_print(f"\n[SUCCESS] Detailed benchmark results saved to {output_path}")
 
 if __name__ == "__main__":
+    import sys
+    if "--skip-naive" in sys.argv:
+        st.session_state.skip_naive = True
+        sys.argv.remove("--skip-naive")
+        _safe_print("Skipping Naive RAG baseline.")
+    
+    if len(sys.argv) > 1:
+        st.session_state.selected_model = sys.argv[1]
+        _safe_print(f"Using model: {sys.argv[1]}")
     run_benchmarks()

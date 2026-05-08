@@ -115,6 +115,9 @@ def _extract_rebel_triples(text: str) -> list[KnowledgeTriple]:
             decoded_text = tokenizer.decode(output, skip_special_tokens=False)
             
             parsed_triplets = _parse_rebel_output(decoded_text)
+            if not parsed_triplets and len(chunk) > 60:
+                print(f"   [Extractor Warning] REBEL output '{decoded_text}' yielded 0 parsed triples for chunk.")
+
             for triplet in parsed_triplets:
                 all_triples.append(KnowledgeTriple(
                     subject=triplet['head'],

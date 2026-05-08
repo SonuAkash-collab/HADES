@@ -68,20 +68,23 @@ The system was benchmarked across **20 rigorous test cases** distributed across 
 *   **'Attention Is All You Need' (NeurIPS)**: Dense scientific literature regarding Transformer architectures.
 
 #### Comparative Performance Analysis
-The table below compares HADES (Qwen3:0.6b) against a standard **Naive RAG** baseline (utilizing raw context injection without graph-based ranking or verification).
+The table below compares HADES against a standard **Naive RAG** baseline across two model scales.
 
-| Metric | Naive RAG (Baseline) | HADES (Qwen3:0.6b) | Efficiency / Accuracy Gain |
+| Metric | Naive RAG (0.6B) | HADES (0.6B) | HADES (3B Llama) |
 | :--- | :--- | :--- | :--- |
-| **Retrieval Hit Rate** | N/A | **100.0%** | Deterministic Fact Retrieval |
-| **Synthesis Accuracy** | 60.0% | **90.0%** | +30.0% Factual Fidelity |
-| **Avg. Tokens per Query** | ~2,683 | **13.4** | ~200x Token Reduction |
-| **Efficiency Gain** | 1x | **~200x** | Sub-linear Scaling Efficiency |
+| **Retrieval Hit Rate** | N/A | **100.0%** | **100.0%** |
+| **Synthesis Accuracy** | 60.0% | **80.0%** | **95.0%** |
+| **Avg. Latency** | ~33.0s | **~2.5s** | **~23.0s** |
+| **Avg. Tokens per Query** | ~2,683 | **12.8** | **19.8** |
+| **Context Efficiency** | 1x | **210x** | **135x** |
 
 ### 2. System Requirements & Latency
 
 HADES is optimized for edge-compute environments, prioritizing accessibility and high-velocity inference on local hardware.
 
 #### Performance Footprint
+*Measured on: 13th Gen Intel i9-13900H | 16GB RAM | CPU-only inference.*
+
 *   **Hardware Accessibility**: Tier-1 Accessible. The system operates entirely on consumer and student-grade laptops without the requirement for a dedicated GPU.
 *   **Memory Efficiency**: Peak RAM utilization is strictly capped at **< 3.0 GB**, allowing for concurrent application usage during inference.
 
@@ -90,13 +93,11 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 *   **Throughput**: ~100-150 tokens/sec.
 *   **Relative Latency**: Approximately **2.5x faster** than standard 1.5B parameter local models, drastically reducing the "time-to-answer" for complex document queries.
 
-#### Latency Breakdown (Tier-1 CPU)
+#### Latency Breakdown
 *   **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly for lightning-fast future loads).
 *   **Time-to-First-Token (Cache Hit)**: < 1.5 seconds.
 *   **End-to-End Answer Generation**: ~2-3 seconds per query.
 *   **Cerberus Verification (DeBERTa)**: +1.5 seconds (Lazy-loaded only when a new write-back claim is generated).
-
-
 
 ---
 
@@ -109,8 +110,9 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 5. REBEL num_return_sequences=3 provides 3x graph coverage at the same inference cost compared to single-sequence decoding.
 6. **Cerberus Lazy-loading**: Cerberus verification models present a massive memory bottleneck. Implementing lazy-loading for the DeBERTa-v3-base cross-encoder ensures the system stays under 3GB RAM by only occupying memory when a write-back claim is generated.
 7. **Dual-Layer L2 Retrieval (Resilience)**: The L2 Knowledge Graph index implements a hybrid retrieval strategy. If REBEL fails to extract a specific triple, the system automatically falls back to a semantic search over raw source sentences indexed within the same vector space. This ensures 100% retrieval hit rates even in complex technical documents.
-8. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
-9. **String-Match Sensitivity**: Benchmark results (80%) are conservative due to strict string-matching. Factual audit shows the system achieves ~90% accuracy, but fails string-matching when the LLM answers in full sentences or varies pluralization (e.g., "convolution" vs "convolutions").
+8. **Empty Generation Failure**: The 0.6B model occasionally returns empty strings on technical comparison queries even with a 100% retrieval hit. This indicates a "synthesis ceiling"—the retrieved triple contained the answer but the sub-billion model failed to synthesize a response.
+9. **Semantic Type-Confusion**: In flat Knowledge Graphs, entities with high semantic overlap can trigger false positives during synthesis. Future iterations should implement **Typed Causal Edges** (`ancestor_of` vs. `is_a`) to prevent the LLM from substituting ancestors for canonical species.
+10. **String-Match Sensitivity**: Accuracy metrics are conservative due to strict matching logic. Factual audit shows the 0.6B model achieves **90% semantic accuracy**, but was penalized for minor variations such as singular/plural forms ("convolution" vs "convolutions") and missing units ("3.5" vs "3.5 days").
 
 ### Known Limitations (v1.0)
 - **Entity Disambiguation**: HADES does not currently distinguish between closely related entities with overlapping relationships. Disambiguation between ancestor and descendant species (e.g., *Malus sieversii* vs. *Malus domestica*) requires typed edges not present in this release.
@@ -168,27 +170,6 @@ $env:PYTHONPATH="."; python -m streamlit run app.py
 ```
 
 Note: First run downloads REBEL and DeBERTa weights (~600MB total). Subsequent runs use cached weights.
-
----
-
-## Benchmark Results (v1.0 Final)
-
-### HADES v1.0 Performance Baseline
-
-| Metric | HADES v1.0 | Naive RAG (Baseline) | Efficiency Gain |
-| :--- | :--- | :--- | :--- |
-| **Retrieval Hit Rate** | **100%** | N/A | **No Edge Blindness** |
-| **Synthesis Accuracy** | **90%** | 60% | **+30% Factual Fidelity** |
-| **Avg Tokens / Query** | **13.4** | ~2,683 | **~200x Fewer Tokens** |
-| **Model Footprint** | **0.6B Parameters** | N/A | **Edge-Device Ready** |
-
-#### Latency Breakdown (v1.0 Baseline)
-*Measured on: 13th Gen Intel i9-13900H | 16GB RAM | CPU-only inference. Results will vary on lower-spec hardware.*
-
-- **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly).
-- **Time-to-First-Token (Cache Hit)**: < 1.5 seconds.
-- **End-to-End Answer Generation**: ~2.5 seconds per query.
-- **Cerberus Verification (DeBERTa)**: +1.5 seconds (Lazy-loaded only on write-back).
 
 ---
 
