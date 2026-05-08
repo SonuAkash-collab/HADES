@@ -268,10 +268,11 @@ def _check_accuracy(answer: str, expected: str) -> bool:
 
     # Tier 2: keyword overlap — significant words from expected
     # must appear in answer. "Significant" = alpha chars only,
-    # length > 2 (catches "22", "ATP", etc.)
+    # length > 2 (catches "ATP", etc.)
+    # CRITICAL FIX: Do not treat pure numbers as keywords to avoid '000' false positives.
     expected_words = [
         w for w in re.sub(r'[^a-z0-9\s]', ' ', expected_lower).split()
-        if len(w) > 2
+        if len(w) > 2 and not w.isdigit()
     ]
     if expected_words and all(w in answer_lower for w in expected_words):
         return True
