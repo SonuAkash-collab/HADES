@@ -73,7 +73,7 @@ The table below compares HADES against a standard **Naive RAG** baseline across 
 | Metric | Naive RAG (0.6B) | HADES (0.6B) | HADES (3B Llama) |
 | :--- | :--- | :--- | :--- |
 | **Retrieval Hit Rate** | N/A | **100.0%** | **100.0%** |
-| **Synthesis Accuracy** | 60.0% | **80.0%** | **95.0%** |
+| **Synthesis Accuracy** | 60.0% | **80.0% (90% Semantic)** | **95.0%** |
 | **Avg. Latency** | ~33.0s | **~2.5s** | **~23.0s** |
 | **Avg. Tokens per Query** | ~2,683 | **12.8** | **19.8** |
 | **Context Efficiency** | 1x | **210x** | **135x** |
