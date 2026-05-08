@@ -101,8 +101,9 @@ By utilizing the specialized 0.6B parameter model coupled with Charon’s extrem
 
 #### Latency Breakdown
 *   **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly for lightning-fast future loads).
-*   **Time-to-First-Token (Cache Hit)**: < 1.5 seconds.
-*   **End-to-End Answer Generation**: ~2-3 seconds per query.
+*   **Time-to-First-Token (Cache Hit)**: < 1.2 seconds.
+*   **End-to-End Answer Generation (L1 Hit)**: **~2.5 seconds** per query.
+*   **End-to-End Answer Generation (L2 Hit)**: **~3.2 seconds** per query.
 *   **Cerberus Verification (DeBERTa)**: +1.5 seconds (Lazy-loaded only when a new write-back claim is generated).
 
 #### Memory Hierarchy Latency (The "Page Fault" Tax)
