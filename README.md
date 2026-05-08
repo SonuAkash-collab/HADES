@@ -78,6 +78,12 @@ The table below compares HADES against a standard **Naive RAG** baseline across 
 | **Avg. Tokens per Query** | ~2,683 | **19.2** | **12.8** | **19.8** |
 | **Context Efficiency** | 1x | **140x** | **210x** | **135x** |
 
+**Model Identity Key:**
+*   **Naive RAG (0.6B)**: Qwen 3 (0.6B) baseline using standard vector-search retrieval.
+*   **HADES (360M)**: **SmolLM2 (360M)** — The "Efficiency King" ultra-micro candidate.
+*   **HADES (0.6B)**: **Qwen 3 (0.6B)** — The "Micro-Champion" precision-tuned candidate.
+*   **HADES (3B)**: **Llama 3.2 (3B)** — The "High-Precision" reference gold standard.
+
 ### 2. System Requirements & Latency
 
 HADES is optimized for edge-compute environments, prioritizing accessibility and high-velocity inference on local hardware.
