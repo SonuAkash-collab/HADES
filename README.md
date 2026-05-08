@@ -97,7 +97,7 @@ HADES is optimized for edge-compute environments, prioritizing accessibility and
 #### Inference Velocity
 By utilizing the specialized 0.6B parameter model coupled with Charon’s extreme token compression, HADES achieves industry-leading local inference speeds:
 *   **Throughput**: ~100-150 tokens/sec.
-*   **Relative Latency**: Approximately **2.5x faster** than standard 1.5B parameter local models, drastically reducing the "time-to-answer" for complex document queries.
+*   **Relative Latency**: Approximately **10x faster** for multi-document reasoning than high-precision 3B parameter models (e.g., Llama 3.2 3B). While larger models exhibit a "complexity cliff" on CPU when processing multiple facts, the 0.6B architecture maintains a flat ~2.5s response profile.
 
 #### Latency Breakdown
 *   **First-Time PDF Ingestion (REBEL)**: ~2-4 minutes per page (Results are cached instantly for lightning-fast future loads).

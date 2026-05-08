@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-08T20:18:52.019140",
+  "timestamp": "2026-05-08T20:58:44.886743",
   "model": "llama3.2:1b",
   "hardware": {
     "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
     "ram": "16.0 GB (Estimated)",
     "os": "Windows 11"
   },
-  "hades_accuracy": 55.00000000000001,
+  "hades_accuracy": 50.0,
   "retrieval_hit_rate": 100.0,
   "naive_rag_accuracy": 0.0,
   "avg_hades_tokens": 17.35,
@@ -159,7 +159,7 @@
       "query": "How many companies use NVIDIA AI technology to power AI factories?",
       "expected": "40,000",
       "hades_got": "## 1,000",
-      "hades_correct": true,
+      "hades_correct": false,
       "hades_tokens": 5,
       "retrieval_hit": true,
       "naive_got": "SKIPPED",
