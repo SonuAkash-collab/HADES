@@ -7,6 +7,8 @@ import tempfile
 import ollama
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
+import fitz
+import difflib
 
 from charon.core import L1Cache, rank_triples_by_importance
 from cerberus.core import build_source_graph, verify_claim
@@ -55,6 +57,19 @@ def safe_print(msg: str, **kwargs):
 
 def required_system_budget() -> int:
     return max(128, len(SYSTEM_INSTRUCTION.split()) * 3)
+
+def clean_markdown(text: str) -> str:
+    """Removes extraction artifacts and cleans up markdown formatting."""
+    # 1. Strikethrough cleanup
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+
+    # 2. Citation cleanup
+    text = re.sub(r'\[\d+\]', '', text)
+
+    # 3. Picture placeholder removal
+    text = re.sub(r'\*\*==> picture.*?<==\*\*', '', text, flags=re.IGNORECASE)
+
+    return text
 
 def push_telemetry_item(state: dict, key: str, value: str, max_items: int = 12) -> None:
     items = state["telemetry"].setdefault(key, [])
@@ -273,7 +288,43 @@ def query_l3_wiki(keyword: str, embedder) -> str:
 def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
     import pymupdf4llm
     
+    doc = fitz.open(file_path)
     md_text = pymupdf4llm.to_markdown(file_path, page_chunks=True)
+    
+    # Hybrid Healing: Replace fragmented headers with clean plain text equivalents
+    for i, page_chunk in enumerate(md_text):
+        if i >= len(doc):
+            break
+            
+        md_content = page_chunk.get("text", "")
+        plain_text_lines = [l.strip() for l in doc[i].get_text("text").splitlines() if l.strip()]
+        
+        md_lines = md_content.splitlines()
+        healed_lines = []
+        for line in md_lines:
+            if line.strip().startswith("##"):
+                # Clean fragmented header for fuzzy matching
+                frag_clean = re.sub(r'[^a-zA-Z0-9]', '', line).lower()
+                
+                best_match = None
+                best_score = 0
+                for pt_line in plain_text_lines:
+                    pt_clean = re.sub(r'[^a-zA-Z0-9]', '', pt_line).lower()
+                    # Calculate similarity ratio
+                    score = difflib.SequenceMatcher(None, frag_clean, pt_clean).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best_match = pt_line
+                
+                # Replace with clean plain text if similarity is high enough
+                if best_match and best_score > 0.6:
+                    healed_lines.append(f"## {best_match}")
+                else:
+                    healed_lines.append(line)
+            else:
+                healed_lines.append(line)
+        
+        page_chunk["text"] = clean_markdown("\n".join(healed_lines))
 
     triples: list[KnowledgeTriple] = []
     source_page_lookup: dict[tuple[str, str, str], int] = {}
