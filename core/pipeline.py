@@ -325,6 +325,8 @@ def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
     cache.set_tools.clear()
 
     ranked = rank_triples_by_importance(triples)
+    
+
     for triple, score in ranked:
         cache.add_fact(triple, pagerank_score=score)
 

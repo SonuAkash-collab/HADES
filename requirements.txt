@@ -12,3 +12,7 @@ transformers>=4.35.0
 torch>=2.0.0
 python-dotenv
 matplotlib
+fastapi
+uvicorn
+python-multipart
+sse-starlette

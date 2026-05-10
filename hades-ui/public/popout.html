@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HADES Knowledge Graph Pop-out</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --text-muted: #606060;
+            --accent-blue: #4d9fff;
+            --accent-green: #00e676;
+            --accent-amber: #ffb400;
+            --border: #1f1f2e;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            overflow: hidden;
+        }
+
+        #graph-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        svg {
+            display: block;
+        }
+
+        .glow-green {
+            filter: drop-shadow(0 0 4px var(--accent-green));
+        }
+
+        @keyframes pulse {
+            0% { r: 6; stroke-opacity: 1; stroke-width: 1px; }
+            100% { r: 15; stroke-opacity: 0; stroke-width: 3px; }
+        }
+
+        .pulse-amber {
+            stroke: var(--accent-amber);
+            stroke-width: 2px;
+            animation: pulse 1s ease-out infinite;
+        }
+
+        .header {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background: rgba(18, 18, 26, 0.8);
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">HADES | EXTERNAL KNOWLEDGE GRAPH</div>
+    <div id="graph-container">
+        <svg id="graph"></svg>
+    </div>
+
+    <script>
+        const graphDataStr = localStorage.getItem('hades_graph_data');
+        if (!graphDataStr) {
+            document.body.innerHTML = '<div style="padding: 2rem; color: var(--accent-amber);">No graph data found. Please open from the main interface.</div>';
+        } else {
+            const { data, l1Nodes, activeNode } = JSON.parse(graphDataStr);
+            renderGraph(data, l1Nodes, activeNode);
+        }
+
+        function renderGraph(data, l1Nodes, activeNode) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            const svg = d3.select("#graph")
+                .attr("width", width)
+                .attr("height", height);
+
+            const g = svg.append("g");
+
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 8])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+
+            svg.call(zoom);
+
+            const simulation = d3.forceSimulation(data.nodes)
+                .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
+                .force("charge", d3.forceManyBody().strength(-200))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(30));
+
+            const link = g.append("g")
+                .selectAll("line")
+                .data(data.links)
+                .enter().append("line")
+                .attr("stroke", "#2a2a3d")
+                .attr("stroke-width", 1);
+
+            const node = g.append("g")
+                .selectAll("g")
+                .data(data.nodes)
+                .enter().append("g");
+
+            node.append("circle")
+                .attr("r", 6)
+                .attr("fill", d => {
+                    if (d.id === activeNode) return "var(--accent-amber)";
+                    if (l1Nodes.includes(d.id)) return "var(--accent-green)";
+                    return "var(--text-muted)";
+                })
+                .attr("class", d => l1Nodes.includes(d.id) ? "glow-green" : "");
+
+            node.filter(d => d.id === activeNode)
+                .append("circle")
+                .attr("r", 6)
+                .attr("fill", "none")
+                .attr("class", "pulse-amber");
+
+            node.append("text")
+                .attr("dx", 10)
+                .attr("dy", 4)
+                .text(d => d.label)
+                .attr("font-size", "10px")
+                .attr("fill", "var(--text-secondary)")
+                .style("pointer-events", "none");
+
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node.attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth;
+                const newHeight = window.innerHeight;
+                svg.attr("width", newWidth).attr("height", newHeight);
+                simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2)).alpha(0.3).restart();
+            });
+        }
+    </script>
+</body>
+</html>

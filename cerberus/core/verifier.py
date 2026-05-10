@@ -146,56 +146,61 @@ def _load_spacy():
 def _get_claim_keywords(text: str) -> set[str]:
     """
     Extract keywords from a claim for premise retrieval.
-    
-    Unlike aggressive lemmatisation, this preserves:
-    - All nouns and proper nouns (original form)
-    - All verbs (lemmatised for matching flexibility)  
-    - All numbers and percentages
-    - Words longer than 3 characters that aren't pure stop words
-    
-    Does NOT filter out: numbers, short verbs like "has"/"grew",
-    determiners that carry meaning, or domain terms.
+    Only uses lemmas to avoid duplicate counts for plurals/forms.
     """
     nlp = _load_spacy()
-    
     doc = nlp(text.lower())
     keywords = set()
     
     for token in doc:
-        # Always keep: nouns, proper nouns, verbs, numbers
+        # Keep: nouns, proper nouns, numbers
         if token.pos_ in {"NOUN", "PROPN", "NUM"}:
             keywords.add(token.lemma_)
-            keywords.add(token.text)  # add both forms
+        # Keep: important adjectives (e.g. "poisonous")
+        elif token.pos_ == "ADJ" and len(token.text) > 4:
+            keywords.add(token.lemma_)
+        # Keep: verbs (lemmatised)
         elif token.pos_ == "VERB" and len(token.text) > 1:
             keywords.add(token.lemma_)
-        # Keep numbers and percentages regardless of POS
-        elif any(c.isdigit() for c in token.text):
-            keywords.add(token.text)
-        # Keep words > 3 chars that aren't pure punctuation
-        elif len(token.text) > 3 and not token.is_punct:
+        # Keep: any other long meaningful words
+        elif len(token.text) > 3 and not token.is_punct and not token.is_stop:
             keywords.add(token.lemma_)
-    
+            
     return keywords
 
 
 def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, source_sentences: list[str] = None) -> str:
     claim_keywords = _get_claim_keywords(claim.as_text())
     
-    # Match triples
-    matching_triples: list[KnowledgeTriple] = []
+    # Calculate PageRank scores for tie-breaking
+    import networkx as nx
+    try:
+        # Use PageRank from nodes
+        scores = nx.pagerank(source_graph.graph, weight="weight")
+    except Exception:
+        scores = {}
+
+    # Match triples and score them
+    scored_triples: list[tuple[KnowledgeTriple, int, float]] = []
     for triple in source_graph.triples:
         triple_keywords = _get_claim_keywords(triple.as_text())
         overlap = len(claim_keywords.intersection(triple_keywords))
         if overlap >= 1:
-            matching_triples.append(triple)
+            # Score = subject_pr + object_pr
+            pr_score = scores.get(triple.subject, 0.0) + scores.get(triple.object, 0.0)
+            scored_triples.append((triple, overlap, pr_score))
     
+    # Sort by overlap DESC, then PageRank DESC
+    scored_triples.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    matching_triples = [t for t, _, _ in scored_triples]
+
     # Match sentences  
     scored_sentences: list[tuple[int, str]] = []
     if source_sentences:
         for sentence in source_sentences:
             sent_keywords = _get_claim_keywords(sentence)
             overlap = len(claim_keywords.intersection(sent_keywords))
-            if overlap >= 1:  # sentences need stronger match
+            if overlap >= 1:
                 clean_sent = " ".join(sentence.split())
                 scored_sentences.append((overlap, clean_sent))
     
@@ -219,11 +224,11 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
     matching_sentences = [s for _, s in scored_sentences[:1]]
     
     # Build premise: prose first, then triples
-    # Limit to 1 sentences and 2 triples to avoid noise
+    # Limit to 1 sentences and 10 triples to ensure full coverage (increased from 8)
     premise_parts = []
     for sent in matching_sentences:
         premise_parts.append(sent)
-    for triple in matching_triples[:2]:
+    for triple in matching_triples[:10]:
         clean_triple = " ".join(triple.as_text().split())
         premise_parts.append(clean_triple)
     
@@ -238,10 +243,7 @@ def _load_nli_model(model_name: str):
     import streamlit as st
     
     # NEW LOGGING STATEMENTS
-    print(f"DeBERTa loaded into memory: {model_name}")
-    if st.runtime.exists():
-        if "telemetry" in st.session_state:
-            st.session_state.telemetry.setdefault("memory_faults", []).append(f"Model Initialized: {model_name} loaded into memory")
+    # Removed for final cleanup
             
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
