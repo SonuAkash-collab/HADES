@@ -347,11 +347,11 @@ def render_sidebar():
             st.caption(f"> {fault}")
 
         st.divider()
-        st.markdown("<div class='telemetry-label'>Inference Model</div>", unsafe_allow_html=True)
+        approved_models = ["qwen3:0.6b"]
         selected = st.selectbox(
             label="model",
-            options=["qwen3:0.6b", "phi3.5", "llama3.2:3b"],
-            index=["qwen3:0.6b", "phi3.5", "llama3.2:3b"].index(st.session_state.get("selected_model", "qwen3:0.6b")),
+            options=approved_models,
+            index=approved_models.index(st.session_state.get("selected_model", "qwen3:0.6b")) if st.session_state.get("selected_model") in approved_models else 0,
             label_visibility="collapsed"
         )
         if selected != st.session_state.get("selected_model"):

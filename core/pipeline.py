@@ -212,16 +212,32 @@ def call_policy_model(messages: list[dict[str, str]], model_name: str) -> str:
     
     request_messages.append({"role": "assistant", "content": ""})
 
-    response = ollama.chat(
-        model=model_name,
-        messages=request_messages,
-        options=OLLAMA_OPTIONS,
-    )
-    content = response.get("message", {}).get("content", "").strip()
-    
-    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
-    content = re.sub(r"^(MODE\s*\d.*?CACHE\s*HIT\s*:\s*|MODE\s*\d.*?:\s*|CACHE\s*(HIT|MISS).*?:\s*)", "", content, flags=re.IGNORECASE).strip()
-    return content
+    for attempt in range(2):
+        try:
+            response = ollama.chat(
+                model=model_name,
+                messages=request_messages,
+                options=OLLAMA_OPTIONS,
+            )
+            raw_content = response.get("message", {}).get("content", "")
+            
+            content = raw_content.strip()
+            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+            content = re.sub(r"^(MODE\s*\d.*?CACHE\s*HIT\s*:\s*|MODE\s*\d.*?:\s*|CACHE\s*(HIT|MISS).*?:\s*)", "", content, flags=re.IGNORECASE).strip()
+            
+            if content:
+                return content
+            
+            # If empty, retry once
+            if attempt == 0:
+                continue
+            else:
+                return "HADES could not generate a response. Please try rephrasing your query."
+                
+        except Exception as e:
+            if attempt == 0:
+                continue
+            raise e
 
 # --- Core Pipeline Orchestration ---
 

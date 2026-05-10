@@ -22,12 +22,17 @@ from shared.triple import KnowledgeTriple
 # --- Session State ---
 # Mirroring ui/components.py's init_session_state()
 SESSION_STATE = {}
+APPROVED_MODELS = ["qwen3:0.6b"]
 
 def init_session_state():
     budget = pipeline.required_system_budget()
     
+    initial_model = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
+    if initial_model not in APPROVED_MODELS:
+        initial_model = "qwen3:0.6b"
+        
     SESSION_STATE.update({
-        "selected_model": os.getenv("OLLAMA_MODEL", "qwen3:0.6b"),
+        "selected_model": initial_model,
         "messages": [],
         "source_graph": None,
         "l1_cache": L1Cache(
@@ -126,6 +131,15 @@ async def call_policy_model_stream(messages: list[dict], model_name: str) -> Asy
             yield content
 
 # --- Endpoints ---
+
+@app.post("/api/settings")
+async def update_settings(payload: dict):
+    model = payload.get("model")
+    if model:
+        if model not in APPROVED_MODELS:
+            raise HTTPException(status_code=400, detail="Model not compatible with HADES prompt format")
+        SESSION_STATE["selected_model"] = model
+    return {"status": "ok", "selected_model": SESSION_STATE.get("selected_model")}
 
 @app.post("/api/upload")
 async def upload_pdf(file: UploadFile = File(...)):
