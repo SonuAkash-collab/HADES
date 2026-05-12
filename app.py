@@ -10,6 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Main Application Entry
 def main():
     # 2. UI Lifecycle & Sidebar
     components.render_custom_css()
@@ -30,7 +31,7 @@ def main():
     if uploaded_pdf is not None and st.session_state.loaded_pdf_name != uploaded_pdf.name:
         handlers.handle_pdf_upload(uploaded_pdf)
 
-    # 4. Main Application Tabs
+    # 4. Main Application Tabs setup
     tab_chat, tab_map = st.tabs(["Chat", "Knowledge Map"])
 
     with tab_chat:
