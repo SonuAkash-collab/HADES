@@ -105,13 +105,13 @@ def get_d3_graph(source_graph):
     return {"nodes": nodes, "links": links}
 
 async def call_policy_model_stream(messages: list[dict], model_name: str) -> AsyncGenerator[str, None]:
-    """Streaming wrapper for Ollama policy model calls."""
+    """Streaming wrapper for Ollama policy model calls with <think> tag filtering."""
     request_messages = [dict(m) for m in messages]
     
-    if "qwen3" in model_name:
+    if any(m in model_name.lower() for m in ["qwen3", "0.6b", "0.5b", "smollm"]):
         for msg in request_messages:
             if msg["role"] == "system":
-                msg["content"] += "\nCRITICAL INSTRUCTION: DO NOT output <think> tags. Do not explain your reasoning. Output only the final formatted answer immediately."
+                msg["content"] += "\nCRITICAL INSTRUCTION: DO NOT output <think> tags. Do not explain your reasoning. You MUST answer in EXACTLY ONE SENTENCE. Do not add extra details. If the exact answer is not in the Facts, output ONLY the words 'INSUFFICIENT DATA'."
                 break
     
     # Add empty assistant message to start response
@@ -125,10 +125,45 @@ async def call_policy_model_stream(messages: list[dict], model_name: str) -> Asy
         stream=True
     )
     
+    # Stateful <think> tag filter
+    in_think_block = False
+    buffer = ""
+    PARTIAL_TAGS = ("<", "<t", "<th", "<thi", "<thin", "<think")
+    
     for chunk in stream:
         content = chunk.get("message", {}).get("content", "")
-        if content:
-            yield content
+        if not content:
+            continue
+        buffer += content
+        
+        while buffer:
+            if in_think_block:
+                close_idx = buffer.find("</think>")
+                if close_idx != -1:
+                    buffer = buffer[close_idx + 8:]
+                    in_think_block = False
+                else:
+                    # Still inside think block — discard buffered content
+                    buffer = ""
+                    break
+            else:
+                open_idx = buffer.find("<think>")
+                if open_idx != -1:
+                    # Yield everything before the tag
+                    if open_idx > 0:
+                        yield buffer[:open_idx]
+                    buffer = buffer[open_idx + 7:]
+                    in_think_block = True
+                elif buffer.endswith(PARTIAL_TAGS):
+                    # Possible partial tag at end — hold in buffer
+                    break
+                else:
+                    yield buffer
+                    buffer = ""
+    
+    # Flush remaining buffer (if no unclosed think tag)
+    if buffer and not in_think_block:
+        yield buffer
 
 # --- Endpoints ---
 
@@ -150,11 +185,6 @@ async def upload_pdf(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        # Since we can't touch pipeline.py, we'll mark a general processing stage
-        # or simulate the sub-stages if we really wanted to.
-        SESSION_STATE["telemetry"]["pipeline_stage"] = "extracting triples"
-        # ... logic inside process_pdf ...
-        
         triple_count, node_count = pipeline.process_pdf(
             tmp_path, 
             SESSION_STATE, 
@@ -193,6 +223,7 @@ async def chat_endpoint(payload: dict):
         embedder = app.state.embedder
         cross_encoder = app.state.cross_encoder
         source_graph = SESSION_STATE.get("source_graph")
+        model_name = SESSION_STATE.get("selected_model", "qwen3:0.6b")
         
         active_facts = [entry.text for entry in SESSION_STATE["l1_cache"].set_facts.values()]
         l2_result = pipeline.query_l2_memory(prompt, prompt, source_graph, embedder, cross_encoder)
@@ -203,15 +234,18 @@ async def chat_endpoint(payload: dict):
             pairs = [[prompt, f] for f in combined]
             scores = cross_encoder.predict(pairs)
             scored_facts = sorted(zip(combined, scores), key=lambda x: x[1], reverse=True)
-            forced_facts = [f for f, s in scored_facts[:5]]
+            forced_facts = [f for f, s in scored_facts[:5] if s > 0.0]
         else:
             forced_facts = []
 
         # --- Stage 5: Initial generation (streaming) ---
-        conversation = pipeline.build_partitioned_messages(SESSION_STATE["l1_cache"], prompt, forced_facts=forced_facts)
+        conversation = pipeline.build_partitioned_messages(
+            SESSION_STATE["l1_cache"], prompt,
+            forced_facts=forced_facts,
+            model_name=model_name
+        )
         
         full_content = ""
-        model_name = SESSION_STATE.get("selected_model", "qwen3:0.6b")
         
         async for token in call_policy_model_stream(conversation, model_name):
             full_content += token
@@ -236,11 +270,16 @@ async def chat_endpoint(payload: dict):
             
             SESSION_STATE["l1_cache"].add_tool_result("search_memory", tool_output)
             
-            # Call model again with tool result
+            # Call model again with tool result (aligned with benchmark prompt)
             conversation.append({"role": "assistant", "content": full_content})
             conversation.append({
                 "role": "user",
-                "content": f"TOOL RESULT: {tool_output}\n\nSynthesize final answer."
+                "content": (
+                    f"TOOL RESULT: {tool_output}\n\n"
+                    "COMMAND: Search complete. Read the tool result carefully and synthesize the final answer. "
+                    "Remember to follow the MODE 1 format (prose answer followed by a CLAIMS line). "
+                    "If the answer is truly not in the tool result, output 'INSUFFICIENT DATA'."
+                ),
             })
             
             # Stream the second pass
@@ -249,9 +288,27 @@ async def chat_endpoint(payload: dict):
                 full_content += token
                 yield {"data": json.dumps({"token": token})}
 
+        # Strip any remaining <think> tags from full_content for Cerberus
+        full_content = re.sub(r'<think>.*?</think>', '', full_content, flags=re.DOTALL).strip()
+
         # --- Stage 7: Cerberus Verification & L3 Writeback ---
         SESSION_STATE["telemetry"]["pipeline_stage"] = "verifying (Cerberus)"
+        # Track cerberus_log length before verification to detect new entries
+        cerberus_log = SESSION_STATE["telemetry"]["cerberus_log"]
+        log_count_before = len(cerberus_log)
+        
         is_clean = pipeline.run_cerberus_writeback(full_content, SESSION_STATE)
+        
+        # Determine verdict from only the NEW cerberus_log entries
+        new_entries = cerberus_log[log_count_before:]
+        verdict = "VERIFIED"
+        for entry in new_entries:
+            entry_upper = entry.upper()
+            if "CONTRADICTION" in entry_upper:
+                verdict = "BLOCKED"
+                break
+            elif "NEUTRAL" in entry_upper:
+                verdict = "NEUTRAL"
         
         SESSION_STATE["telemetry"]["pipeline_stage"] = "writing back"
         # --- Stage 8: Post-processing & Final Cache update ---
@@ -260,6 +317,9 @@ async def chat_endpoint(payload: dict):
         
         SESSION_STATE["l1_cache"].add_history_turn("assistant", full_content)
         SESSION_STATE["telemetry"]["pipeline_stage"] = "complete"
+        
+        # Send verdict as final event so frontend doesn't need to re-poll telemetry
+        yield {"data": json.dumps({"verdict": verdict})}
         yield {"data": "[DONE]"}
 
     return EventSourceResponse(event_generator())
@@ -275,6 +335,12 @@ async def get_graph_state():
         "l1_nodes": l1_nodes,
         "active_node": active_node
     }
+
+@app.get("/api/graph/data")
+async def get_graph_data():
+    """Return D3-format graph data. Allows frontend to recover graph after refresh."""
+    graph_data = get_d3_graph(SESSION_STATE.get("source_graph"))
+    return graph_data
 
 @app.get("/api/telemetry")
 async def get_telemetry():

@@ -54,22 +54,35 @@ h1, h2, h3, h4, .mono {
 /* --- Layout --- */
 .app-container {
   display: grid;
-  grid-template-columns: 220px 1fr 320px;
+  /* grid-template-columns is set via inline style from App.jsx */
   height: 100vh;
   width: 100vw;
-  transition: grid-template-columns 0.3s ease;
 }
 
-.app-container.sidebar-collapsed {
-  grid-template-columns: 0px 1fr 320px;
+/* --- Resize Handle --- */
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  background: transparent;
 }
 
-.app-container.graph-collapsed {
-  grid-template-columns: 220px 1fr 0px;
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.2s;
 }
 
-.app-container.sidebar-collapsed.graph-collapsed {
-  grid-template-columns: 0px 1fr 0px;
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  background: var(--border-accent);
 }
 
 .pane {
@@ -83,6 +96,11 @@ h1, h2, h3, h4, .mono {
 
 .pane:last-child {
   border-right: none;
+}
+
+.pane-wrapper {
+  height: 100%;
+  overflow: hidden;
 }
 
 /* --- Sidebar --- */
@@ -132,6 +150,12 @@ h1, h2, h3, h4, .mono {
 
 /* --- Chat --- */
 .chat-pane {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   background-color: var(--bg-primary);
 }
 
@@ -209,6 +233,8 @@ h1, h2, h3, h4, .mono {
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border);
   background-color: var(--bg-primary);
+  flex-shrink: 0;
+  min-height: fit-content;
 }
 
 .dropzone {
@@ -252,12 +278,23 @@ h1, h2, h3, h4, .mono {
 /* --- Graph --- */
 .graph-pane {
   background-color: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .graph-container {
   flex: 1;
+  min-height: 0;
   position: relative;
   overflow: hidden;
+}
+
+.graph-container svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .graph-toolbar {
@@ -289,6 +326,7 @@ h1, h2, h3, h4, .mono {
 
 .node-detail {
   height: 200px;
+  flex-shrink: 0;
   background-color: var(--bg-card);
   border-top: 1px solid var(--border);
   padding: 1rem;
@@ -347,6 +385,7 @@ h1, h2, h3, h4, .mono {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .status-row {
@@ -531,7 +570,11 @@ h1, h2, h3, h4, .mono {
 
 @media (max-width: 900px) {
   .app-container {
-    grid-template-columns: 0px 1fr 0px !important;
+    grid-template-columns: 0px 0px 1fr 0px 0px !important;
+  }
+  
+  .resize-handle {
+    display: none;
   }
   
   .drawer-toggle {

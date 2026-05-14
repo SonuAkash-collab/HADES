@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { ZoomIn, ZoomOut, Maximize2, Info, Maximize, ExternalLink } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Info, Maximize, Minimize, ExternalLink } from 'lucide-react';
 import StatusBar from './StatusBar';
 
 const GraphPanel = ({ data, l1Nodes: propsL1Nodes, activeNode: propsActiveNode, telemetry }) => {
@@ -14,10 +14,25 @@ const GraphPanel = ({ data, l1Nodes: propsL1Nodes, activeNode: propsActiveNode, 
   // Internal state for live updates
   const [l1Nodes, setL1Nodes] = useState(propsL1Nodes || []);
   const [activeNode, setActiveNode] = useState(propsActiveNode || null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   const handleFullscreen = () => {
-    if (containerRef.current.requestFullscreen) {
-      containerRef.current.requestFullscreen();
+    if (!document.fullscreenElement) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
     }
   };
 
@@ -52,12 +67,10 @@ const GraphPanel = ({ data, l1Nodes: propsL1Nodes, activeNode: propsActiveNode, 
   useEffect(() => {
     if (!data || !data.nodes || data.nodes.length === 0) return;
 
-    const width = containerRef.current.clientWidth;
-    const height = containerRef.current.clientHeight;
+    const width = containerRef.current.clientWidth || 600;
+    const height = containerRef.current.clientHeight || 400;
 
-    const svg = d3.select(svgRef.current)
-      .attr('width', width)
-      .attr('height', height);
+    const svg = d3.select(svgRef.current);
 
     svg.selectAll('*').remove();
 
@@ -218,10 +231,11 @@ const GraphPanel = ({ data, l1Nodes: propsL1Nodes, activeNode: propsActiveNode, 
     updateVisuals(l1Nodes, activeNode, false);
 
     const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current) {
+      if (containerRef.current && simulationRef.current) {
         const w = containerRef.current.clientWidth;
         const h = containerRef.current.clientHeight;
-        svg.attr('width', w).attr('height', h);
+        simulationRef.current.force('center', d3.forceCenter(w / 2, h / 2));
+        simulationRef.current.alpha(0.3).restart();
       }
     });
     resizeObserver.observe(containerRef.current);
@@ -294,7 +308,9 @@ const GraphPanel = ({ data, l1Nodes: propsL1Nodes, activeNode: propsActiveNode, 
           <button className="toolbar-btn" title="Zoom In" onClick={() => d3.select(svgRef.current).transition().call(d3.zoom().scaleBy, 1.3)}><ZoomIn size={14} /></button>
           <button className="toolbar-btn" title="Zoom Out" onClick={() => d3.select(svgRef.current).transition().call(d3.zoom().scaleBy, 0.7)}><ZoomOut size={14} /></button>
           <button className="toolbar-btn" title="Reset View" onClick={handleReset}><Maximize2 size={14} /></button>
-          <button className="toolbar-btn" title="Full Screen" onClick={handleFullscreen}><Maximize size={14} /></button>
+          <button className="toolbar-btn" title={isFullscreen ? "Exit Full Screen" : "Full Screen"} onClick={handleFullscreen}>
+            {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
+          </button>
           <button className="toolbar-btn" title="Pop-out Window" onClick={handlePopout}><ExternalLink size={14} /></button>
         </div>
       </div>

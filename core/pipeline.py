@@ -149,7 +149,7 @@ def extract_search_keyword(content: str) -> str | None:
     except json.JSONDecodeError:
         return None
 
-def build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[str] = None) -> list[dict[str, str]]:
+def build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[str] = None, model_name: str = "") -> list[dict[str, str]]:
     facts = forced_facts if forced_facts is not None else [entry.text for entry in cache.set_facts.values()]
     
     numbers_map = {}
@@ -184,9 +184,13 @@ def build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[s
     if not facts_block:
         facts_block = "<empty>"
 
-    user_turns = [turn.text for turn in cache.set_history if turn.role == "user"]
-    last_two_user_turns = user_turns[-2:]
-    user_turns_block = "\n".join(f"- {turn}" for turn in last_two_user_turns) if last_two_user_turns else "<empty>"
+    is_micro_model = any(m in model_name.lower() for m in ["0.6b", "0.5b", "smollm", "1b", "qwen3"])
+    if is_micro_model:
+        user_turns_block = "<empty (conversational history disabled to optimize micro-model attention)>"
+    else:
+        user_turns = [turn.text for turn in cache.set_history if turn.role == "user"]
+        last_two_user_turns = user_turns[-2:]
+        user_turns_block = "\n".join(f"- {turn}" for turn in last_two_user_turns) if last_two_user_turns else "<empty>"
 
     user_content = (
         "L1 Context (Facts):\n"
@@ -204,10 +208,10 @@ def build_partitioned_messages(cache: L1Cache, prompt: str, forced_facts: list[s
 def call_policy_model(messages: list[dict[str, str]], model_name: str) -> str:
     request_messages = [dict(message) for message in messages]
     
-    if "qwen3" in model_name:
+    if any(m in model_name.lower() for m in ["qwen3", "0.6b", "0.5b", "smollm"]):
         for msg in request_messages:
             if msg["role"] == "system":
-                msg["content"] += "\nCRITICAL INSTRUCTION: DO NOT output <think> tags. Do not explain your reasoning. Output only the final formatted answer immediately."
+                msg["content"] += "\nCRITICAL INSTRUCTION: DO NOT output <think> tags. Do not explain your reasoning. You MUST answer in EXACTLY ONE SENTENCE. Do not add extra details. If the exact answer is not in the Facts, output ONLY the words 'INSUFFICIENT DATA'."
                 break
     
     request_messages.append({"role": "assistant", "content": ""})
@@ -277,7 +281,7 @@ def query_l2_memory(query: str, keyword: str, source_graph, embedder, cross_enco
     scores = cross_encoder.predict(pairs)
     
     scored_candidates = sorted(zip(candidate_facts, scores), key=lambda x: x[1], reverse=True)
-    top_facts = [fact for fact, score in scored_candidates[:3]]
+    top_facts = [fact for fact, score in scored_candidates[:3] if score > 0.0]
     
     if is_benchmark:
         safe_print(f"   [L2 Memory Hit] Found {len(top_facts)} facts for keyword '{keyword}'")
@@ -304,10 +308,12 @@ def query_l3_wiki(keyword: str, embedder) -> str:
 def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
     import pymupdf4llm
     
+    state["telemetry"]["pipeline_stage"] = "reading pdf"
     doc = fitz.open(file_path)
     md_text = pymupdf4llm.to_markdown(file_path, page_chunks=True)
     
     # Hybrid Healing: Replace fragmented headers with clean plain text equivalents
+    state["telemetry"]["pipeline_stage"] = "healing layout"
     for i, page_chunk in enumerate(md_text):
         if i >= len(doc):
             break
@@ -372,6 +378,7 @@ def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
         page_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_text) if len(s.strip()) > 20]
         all_sentences.extend(page_sentences)
 
+        state["telemetry"]["pipeline_stage"] = f"extracting triples (p.{page_number})"
         page_triples = extract_source_triples(raw_markdown)
         triples.extend(page_triples)
 
@@ -383,6 +390,7 @@ def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
         state["triple_source_pages"] = {}
         return 0, 0
     
+    state["telemetry"]["pipeline_stage"] = "building L2 graph"
     source_graph = build_source_graph(triples, embedder=embedder, source_sentences=all_sentences)
     state["source_graph"] = source_graph
     state["triple_source_pages"] = source_page_lookup
@@ -391,6 +399,7 @@ def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
     cache.set_facts.clear()
     cache.set_tools.clear()
 
+    state["telemetry"]["pipeline_stage"] = "compressing with charon"
     ranked = rank_triples_by_importance(triples)
     
 
@@ -406,11 +415,9 @@ def process_pdf(file_path: str, state: dict, embedder) -> tuple[int, int]:
             source_graph.graph,
             ollama_model=state.get("selected_model", OLLAMA_MODEL),
         )
-        if extra_merges > 0:
-            push_telemetry_item(state, "memory_faults", f"Deep resolution: {extra_merges} additional aliases resolved")
-
     nodes_after = source_graph.graph.number_of_nodes()
     push_telemetry_item(state, "memory_faults", (f"PDF ingested: {len(triples)} raw triples → {nodes_after} merged graph nodes (L3 injected: {injected_from_l3})"))
+    state["telemetry"]["pipeline_stage"] = "complete"
     return len(triples), nodes_after
 
 def run_cerberus_writeback(final_answer: str, state: dict) -> bool:
@@ -441,7 +448,10 @@ def run_cerberus_writeback(final_answer: str, state: dict) -> bool:
         answer_triples = _extract_svo_triples(final_answer)
     
     if not answer_triples:
-        push_telemetry_item(state, "cerberus_log", "No triples extracted from assistant answer.")
+        if "INSUFFICIENT DATA" not in final_answer:
+            push_telemetry_item(state, "cerberus_log", "⚠️ NEUTRAL | Unverifiable claim (no triples extracted from answer).")
+        else:
+            push_telemetry_item(state, "cerberus_log", "No triples extracted from assistant answer.")
         return True
 
     source_page_lookup = state.get("triple_source_pages", {})
@@ -496,7 +506,7 @@ def chat_loop(prompt: str, state: dict, embedder, cross_encoder) -> str:
         if is_benchmark:
             safe_print(f"   [Cross-Encoder] Reranking complete.")
         scored_facts = sorted(zip(combined, scores), key=lambda x: x[1], reverse=True)
-        forced_facts = [f for f, s in scored_facts[:5]]
+        forced_facts = [f for f, s in scored_facts[:5] if s > 0.0]
 
     if is_benchmark:
         state["telemetry"].setdefault("retrieved_triples", []).extend(forced_facts)
@@ -504,7 +514,7 @@ def chat_loop(prompt: str, state: dict, embedder, cross_encoder) -> str:
         for f in forced_facts:
             safe_print(f"     - {f}", flush=True)
 
-    conversation = build_partitioned_messages(cache, prompt, forced_facts=forced_facts)
+    conversation = build_partitioned_messages(cache, prompt, forced_facts=forced_facts, model_name=state.get("selected_model", OLLAMA_MODEL))
     content = call_policy_model(conversation, state.get("selected_model", OLLAMA_MODEL))
     
     keyword = extract_search_keyword(content)

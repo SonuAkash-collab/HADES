@@ -4,7 +4,7 @@ import zipfile
 def zipdir(path, ziph):
     for root, dirs, files in os.walk(path):
         # Exclude large and unnecessary directories
-        dirs[:] = [d for d in dirs if d not in ('.venv', '.git', '__pycache__', 'scratch', '.vscode')]
+        dirs[:] = [d for d in dirs if d not in ('.venv', '.git', '__pycache__', 'scratch', '.vscode', 'node_modules')]
         for file in files:
             if file == 'atomizer-plus-ultra.zip' or file == 'zip_project.py':
                 continue
@@ -13,7 +13,8 @@ def zipdir(path, ziph):
             ziph.write(file_path, arcname)
 
 if __name__ == '__main__':
-    zip_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'atomizer-plus-ultra.zip')
+    desktop_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    zip_path = os.path.join(desktop_path, 'hades_webapp_final.zip')
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipdir('.', zipf)
     print(f"Project zipped to {zip_path}")

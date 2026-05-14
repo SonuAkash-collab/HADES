@@ -219,16 +219,16 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
             boosted_sentences.append((score, sentence))
         scored_sentences = boosted_sentences
 
-    # Sort by overlap score descending, take only the TOP 1
+    # Sort by overlap score descending, take the TOP 3 sentences for better context
     scored_sentences.sort(key=lambda x: x[0], reverse=True)
-    matching_sentences = [s for _, s in scored_sentences[:1]]
+    matching_sentences = [s for _, s in scored_sentences[:3]]
     
     # Build premise: prose first, then triples
-    # Limit to 1 sentences and 10 triples to ensure full coverage (increased from 8)
+    # Limit to 3 sentences and 12 triples to ensure full coverage
     premise_parts = []
     for sent in matching_sentences:
         premise_parts.append(sent)
-    for triple in matching_triples[:10]:
+    for triple in matching_triples[:12]:
         clean_triple = " ".join(triple.as_text().split())
         premise_parts.append(clean_triple)
     

@@ -1,0 +1,212 @@
+{
+  "timestamp": "2026-05-12T14:58:01.989869",
+  "hardware": {
+    "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "ram": "16.0 GB (Estimated)",
+    "os": "Windows 11"
+  },
+  "hades_accuracy": 90.0,
+  "avg_hades_tokens": 16.0,
+  "results": [
+    {
+      "query": "Where does the apple tree originally come from?",
+      "expected": "Kazakhstan",
+      "hades_got": "The apple tree originates from southern Kazakhstan, Kyrgyzstan, Uzbekistan, Turkey, and northwestern part of China.",
+      "hades_correct": true,
+      "hades_tokens": 24,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "What percentage of global apple production does China account for in 2013?",
+      "expected": "49%",
+      "hades_got": "China accounts for more than half of global apple production in 2013, as stated in the Facts.",
+      "hades_correct": false,
+      "hades_tokens": 21,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "What chemical in apple seeds can release cyanide?",
+      "expected": "amygdalin",
+      "hades_got": "Amygdalin is the chemical in apple seeds that can release cyanide when digested.",
+      "hades_correct": true,
+      "hades_tokens": 18,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "What was the total worldwide apple production in 2013?",
+      "expected": "90.8 million tonnes",
+      "hades_got": "The total worldwide apple production in 2013 was 90.8 million tonnes.",
+      "hades_correct": true,
+      "hades_tokens": 17,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "Who wrote the Prose Edda that mentions the goddess Idunn?",
+      "expected": "Snorri Sturluson",
+      "hades_got": "Snorri Sturluson.",
+      "hades_correct": true,
+      "hades_tokens": 8,
+      "verdict": "NEUTRAL",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "When was the first apple orchard in North America established?",
+      "expected": "1625",
+      "hades_got": "The first apple orchard in North America was established in 1625.",
+      "hades_correct": true,
+      "hades_tokens": 15,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "What is the scientific name of the cultivated apple species?",
+      "expected": "Malus domestica",
+      "hades_got": "The scientific name of the cultivated apple species is Malus domestica.",
+      "hades_correct": true,
+      "hades_tokens": 14,
+      "verdict": "VERIFIED",
+      "domain": "Apple",
+      "doc": "data/Apple-1.pdf"
+    },
+    {
+      "query": "What was Nvidia's revenue in Q1 of FY25?",
+      "expected": "$26 billion",
+      "hades_got": "Nvidia's revenue in Q1 of FY25 was $26 billion.",
+      "hades_correct": true,
+      "hades_tokens": 15,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "How many employees does Nvidia have?",
+      "expected": "31,000+",
+      "hades_got": "NVIDIA has over 31,000 employees.",
+      "hades_correct": true,
+      "hades_tokens": 10,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "When was Nvidia founded?",
+      "expected": "1993",
+      "hades_got": "NVIDIA was founded in 1993.",
+      "hades_correct": true,
+      "hades_tokens": 9,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "How many developers are in the NVIDIA Developer Program?",
+      "expected": "5 million",
+      "hades_got": "The NVIDIA Developer Program has 5 million developers.",
+      "hades_correct": true,
+      "hades_tokens": 10,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "How many companies use NVIDIA AI technology to power AI factories?",
+      "expected": "40,000",
+      "hades_got": "More than 40,000 companies use NVIDIA AI technology to power AI factories.",
+      "hades_correct": true,
+      "hades_tokens": 16,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "How many global startups are in NVIDIA Inception?",
+      "expected": "19,000",
+      "hades_got": "19,000 global startups are in NVIDIA Inception.",
+      "hades_correct": true,
+      "hades_tokens": 11,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "Who is the Founder and CEO of NVIDIA?",
+      "expected": "Jensen Huang",
+      "hades_got": "Jensen Huang is the Founder and CEO of NVIDIA.",
+      "hades_correct": true,
+      "hades_tokens": 11,
+      "verdict": "VERIFIED",
+      "domain": "Nvidia",
+      "doc": "data/corporate-nvidia-in-brief-pdf-august-3374577-FINAL.pdf"
+    },
+    {
+      "query": "What is the name of the new simple network architecture proposed in the paper?",
+      "expected": "Transformer",
+      "hades_got": "The new simple network architecture proposed in the paper is the Transformer.",
+      "hades_correct": true,
+      "hades_tokens": 13,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    },
+    {
+      "query": "What does the Transformer dispense with entirely?",
+      "expected": "recurrence and convolutions",
+      "hades_got": "INSUFFICIENT DATA.",
+      "hades_correct": false,
+      "hades_tokens": 5,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    },
+    {
+      "query": "What is the BLEU score achieved by the model on the WMT 2014 English-to-German translation task?",
+      "expected": "28.4",
+      "hades_got": "The model achieves a BLEU score of 28.4 on the WMT 2014 English-to-German translation task.",
+      "hades_correct": true,
+      "hades_tokens": 26,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    },
+    {
+      "query": "How many days was the model trained for on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 English-to-French translation task?",
+      "expected": "3.5 days",
+      "hades_got": "The model was trained for 3.5 days on eight GPUs to establish a new single-model state-of-the-art BLEU score on the WMT 2014 task.",
+      "hades_correct": true,
+      "hades_tokens": 35,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    },
+    {
+      "query": "What attention mechanism outperforms dot product attention without scaling for larger values of dk?",
+      "expected": "additive attention",
+      "hades_got": "The attention mechanism that outperforms dot product attention without scaling for larger values of dk is additive attention.",
+      "hades_correct": true,
+      "hades_tokens": 21,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    },
+    {
+      "query": "What is used instead of performing a single attention function with dmodel-dimensional keys, values and queries?",
+      "expected": "Multi-Head Attention",
+      "hades_got": "The linear projections used instead of a single attention function with d model-dimensional keys, values, and queries.",
+      "hades_correct": true,
+      "hades_tokens": 21,
+      "verdict": "VERIFIED",
+      "domain": "NIPS",
+      "doc": "data/NIPS-2017-attention-is-all-you-need-Paper-1-4.pdf"
+    }
+  ]
+}
