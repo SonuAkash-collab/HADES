@@ -18,11 +18,19 @@ import core.pipeline as pipeline
 from charon.core import L1Cache
 import ui.handlers as handlers
 from shared.triple import KnowledgeTriple
+import shared.memory_pressure
 
 # --- Session State ---
 # Mirroring ui/components.py's init_session_state()
 SESSION_STATE = {}
 APPROVED_MODELS = ["qwen3:0.6b"]
+
+BASE_BUDGETS = {
+    "facts": 400,
+    "history": 400,
+    "tools": 300,
+    "scratch": 80
+}
 
 def init_session_state():
     budget = pipeline.required_system_budget()
@@ -31,17 +39,15 @@ def init_session_state():
     if initial_model not in APPROVED_MODELS:
         initial_model = "qwen3:0.6b"
         
+    session_budgets = dict(BASE_BUDGETS)
+    session_budgets["system"] = budget
+        
     SESSION_STATE.update({
         "selected_model": initial_model,
         "messages": [],
         "source_graph": None,
         "l1_cache": L1Cache(
-            budgets={
-                "system": budget,
-                "facts": 400,
-                "history": 400,
-                "tools": 300,
-            }
+            budgets=shared.memory_pressure.scale_budgets(session_budgets)
         ),
         "telemetry": {
             "l1_status": "initialized",
@@ -212,6 +218,13 @@ async def chat_endpoint(payload: dict):
 
     async def event_generator():
         SESSION_STATE["telemetry"]["pipeline_stage"] = "querying"
+        
+        # --- Pre-stage: Dynamically scale budgets based on memory pressure ---
+        budget = pipeline.required_system_budget()
+        session_budgets = dict(BASE_BUDGETS)
+        session_budgets["system"] = budget
+        SESSION_STATE["l1_cache"].budgets.update(shared.memory_pressure.scale_budgets(session_budgets))
+        
         # --- Stage 1: Inject clean facts ---
         pipeline.inject_clean_facts_into_l1(SESSION_STATE["l1_cache"])
         
@@ -342,9 +355,15 @@ async def get_graph_data():
     graph_data = get_d3_graph(SESSION_STATE.get("source_graph"))
     return graph_data
 
+@app.get("/api/system/pressure")
+async def get_system_pressure():
+    return shared.memory_pressure.get_pressure_report()
+
 @app.get("/api/telemetry")
 async def get_telemetry():
-    return SESSION_STATE["telemetry"]
+    telemetry = dict(SESSION_STATE["telemetry"])
+    telemetry["memory_pressure"] = shared.memory_pressure.get_pressure_report()
+    return telemetry
 
 @app.post("/api/cache/flush")
 async def flush_cache():

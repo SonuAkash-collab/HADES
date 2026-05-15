@@ -54,6 +54,9 @@ Cerberus enforces a dirty-bit write-back policy to protect the integrity of the 
 **L1 Set-Associative Cache**
 The L1 active context is divided into five typed sets to prevent context dilution. These include a pinned SYSTEM set, a FACTS set with PageRank-based eviction, a HISTORY set using Least Recently Used logic, a TOOLS set following First-In-First-Out priority, and a SCRATCH set that is fully flushed after verification. The token budget scales dynamically with document size: max(150, min(800, document_tokens ÷ 6)).
 
+**Memory-Pressure-Aware Cache Management**
+HADES implements OS-inspired memory pressure detection, dynamically scaling L1 token budgets based on host RAM utilization. When system memory is under pressure, the facts, history, tools and scratch budgets scale down automatically (to 70%, 50%, or 30% of base depending on tier), preventing OOM conditions while preserving critical system instructions. This makes HADES the first RAG system to treat host memory state as a first-class scheduling input.
+
 ---
 
 ## Benchmark Results

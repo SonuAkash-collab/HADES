@@ -77,6 +77,18 @@ const Sidebar = ({ telemetry, theme, setTheme, className }) => {
         <div style={{ display: 'grid', gap: '8px' }}>
           <div>STATUS: <span style={{ color: 'var(--accent-green)' }}>{telemetry?.l1_status || 'IDLE'}</span></div>
           <div>TOOL CALLS: <span style={{ color: 'var(--accent-blue)' }}>{telemetry?.tool_calls || 0}</span></div>
+          {telemetry?.memory_pressure && (
+            <div>
+              RAM: <span style={{
+                color: telemetry.memory_pressure.tier === 'relaxed' ? 'var(--accent-green)' :
+                       telemetry.memory_pressure.tier === 'moderate' ? 'var(--accent-amber)' :
+                       'var(--accent-red)',
+                animation: telemetry.memory_pressure.tier === 'critical' ? 'pulse-opacity 1s infinite' : 'none'
+              }}>
+                {telemetry.memory_pressure.ram_percent}% — {telemetry.memory_pressure.tier.toUpperCase()}
+              </span>
+            </div>
+          )}
         </div>
       </CollapsiblePanel>
 
