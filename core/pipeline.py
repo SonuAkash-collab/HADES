@@ -426,11 +426,43 @@ def run_cerberus_writeback(final_answer: str, state: dict) -> bool:
         push_telemetry_item(state, "cerberus_log", "No source graph loaded; Cerberus verification skipped.")
         return True
 
+    answer = re.sub(r'<think>.*?</think>', '', final_answer, flags=re.DOTALL)
+
+    answer = re.sub(r'\{"tool":\s*".*?"\}', '', answer)
+    answer = re.sub(r'\{"tool":\s*".*?",.*?\}', '', answer, flags=re.DOTALL)
+
+    hedges = [
+        "Based on the Facts,", "According to the document,", "The answer is",
+        "The Facts mention that", "Based on the provided facts,"
+    ]
+    for hedge in hedges:
+        answer = answer.replace(hedge, "")
+
     answer_triples = []
-    claims_match = re.search(r'CLAIMS:\s*(\[.*?\])', final_answer, re.DOTALL)
+    claims_match = re.search(r'CLAIMS\s*:\s*(\[.*?\])', answer, re.DOTALL | re.IGNORECASE)
+    
     if claims_match:
+        raw = claims_match.group(1)
+        raw_claims = None
+        
         try:
-            raw_claims = json.loads(claims_match.group(1))
+            raw_claims = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            repaired = re.sub(r',\s*([\]}])', r'\1', raw)
+            try:
+                raw_claims = json.loads(repaired)
+            except (json.JSONDecodeError, TypeError):
+                repaired = repaired.replace("'", '"')
+                try:
+                    raw_claims = json.loads(repaired)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        if raw_claims is not None:
+            if not raw_claims:
+                push_telemetry_item(state, "cerberus_log", "⚠️ NEUTRAL | LLM produced empty CLAIMS block — no verifiable claims in response.")
+                return True
+                
             for c in raw_claims:
                 if isinstance(c, dict) and c.get("s") and c.get("v") and c.get("o"):
                     answer_triples.append(KnowledgeTriple(
@@ -440,15 +472,12 @@ def run_cerberus_writeback(final_answer: str, state: dict) -> bool:
                         extraction_method="llm_structured",
                         is_deterministic=True,
                     ))
-        except (json.JSONDecodeError, TypeError):
-            pass
     
     if not answer_triples:
-        from shared.extractor import _extract_svo_triples
-        answer_triples = _extract_svo_triples(final_answer)
+        answer_triples = extract_claim_triples(answer)
     
     if not answer_triples:
-        if "INSUFFICIENT DATA" not in final_answer:
+        if "INSUFFICIENT DATA" not in answer:
             push_telemetry_item(state, "cerberus_log", "⚠️ NEUTRAL | Unverifiable claim (no triples extracted from answer).")
         else:
             push_telemetry_item(state, "cerberus_log", "No triples extracted from assistant answer.")

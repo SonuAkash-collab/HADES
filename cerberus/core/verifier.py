@@ -25,6 +25,18 @@ def verify_claim(claim: KnowledgeTriple, source_graph: SourceGraph, model_name: 
     premise = _build_localized_premise(claim, source_graph, source_sentences)
     if not premise:
         return VerificationResult(is_verified=False, reason="No relevant facts found in the source graph context")
+    # Fix C: Negation pre-check
+    nlp = _load_spacy_model()
+    claim_doc = nlp(claim.as_text())
+    # Expand detection to include "no" which spaCy often marks as 'det' instead of 'neg'
+    has_negation_claim = any(t.dep_ == "neg" or t.lower_ == "no" for t in claim_doc)
+
+    negation_high_risk = False
+    if has_negation_claim:
+        premise_doc = nlp(premise)
+        has_negation_premise = any(t.dep_ == "neg" or t.lower_ == "no" for t in premise_doc)
+        if not has_negation_premise:
+            negation_high_risk = True
 
     tokenizer, model = _load_nli_model(model_name)
     inputs = tokenizer(
@@ -83,22 +95,27 @@ def verify_claim(claim: KnowledgeTriple, source_graph: SourceGraph, model_name: 
                     outputs = ext_outputs
                     break
 
-    if not claim.is_deterministic and label == "entailment":
+    # Fix C: High-risk negation threshold adjustment
+    threshold = 0.5 if negation_high_risk else 0.85
+    if (not claim.is_deterministic or negation_high_risk) and label == "entailment":
         probs = F.softmax(outputs.logits, dim=-1)
         entailment_idx = [i for i, l in model.config.id2label.items() if "entail" in l.lower()][0]
         entailment_score = probs[0][entailment_idx].item()
 
-        if entailment_score <= 0.85:
-            return VerificationResult(
-                is_verified=False,
-                reason=f"GLiNER-extracted triple requires higher confidence threshold (got {entailment_score:.2f})",
-                label="neutral"
+        if entailment_score <= threshold:
+            reason = (
+                f"High-risk triple requires higher confidence threshold (got {entailment_score:.2f}, threshold {threshold})"
+                if negation_high_risk else
+                f"GLiNER-extracted triple requires higher confidence threshold (got {entailment_score:.2f})"
             )
+            if negation_high_risk:
+                reason += " (negation detected — high risk)"
+            return VerificationResult(is_verified=False, reason=reason, label="neutral")
 
     # GPE precision check — prevent geographic over-generalisation
     # e.g. "United Kingdom" claimed when source says "England"
     if label == "entailment":
-        nlp = _load_spacy()
+        nlp = _load_spacy_model()
         claim_doc = nlp(claim.as_text())
         claim_gpes = {
             ent.text.lower().strip()
@@ -123,24 +140,40 @@ def verify_claim(claim: KnowledgeTriple, source_graph: SourceGraph, model_name: 
                 )
 
     if label == "entailment":
-        return VerificationResult(
+        res = VerificationResult(
             is_verified=True,
             reason="Verified by local DeBERTa-v3 NLI model against the source graph.",
             label=label,
         )
-
-    if label == "contradiction":
-        reason = "Rejected by local DeBERTa-v3 NLI model: the claim contradicts the source graph."
+    elif label == "contradiction":
+        res = VerificationResult(
+            is_verified=False,
+            reason="Rejected by local DeBERTa-v3 NLI model: the claim contradicts the source graph.",
+            label=label,
+        )
     else:
-        reason = f"Rejected by local DeBERTa-v3 NLI model: the claim is not entailed by the source graph (label: {label})."
+        res = VerificationResult(
+            is_verified=False,
+            reason=f"Rejected by local DeBERTa-v3 NLI model: the claim is not entailed by the source graph (label: {label}).",
+            label=label,
+        )
 
-    return VerificationResult(is_verified=False, reason=reason, label=label)
+    if negation_high_risk:
+        res.reason += " (negation detected — high risk)"
+
+    return res
 
 
 
 @lru_cache(maxsize=1)
-def _load_spacy():
-    return spacy.load("en_core_web_sm")
+def _load_spacy_model():
+    import spacy
+    try:
+        return spacy.load("en_core_web_sm")
+    except OSError:
+        from spacy.cli import download
+        download("en_core_web_sm")
+        return spacy.load("en_core_web_sm")
 
 
 def _get_claim_keywords(text: str) -> set[str]:
@@ -148,7 +181,7 @@ def _get_claim_keywords(text: str) -> set[str]:
     Extract keywords from a claim for premise retrieval.
     Only uses lemmas to avoid duplicate counts for plurals/forms.
     """
-    nlp = _load_spacy()
+    nlp = _load_spacy_model()
     doc = nlp(text.lower())
     keywords = set()
     
@@ -240,7 +273,6 @@ def _build_localized_premise(claim: KnowledgeTriple, source_graph: SourceGraph, 
 
 @lru_cache(maxsize=1)
 def _load_nli_model(model_name: str):
-    import streamlit as st
     
     # NEW LOGGING STATEMENTS
     # Removed for final cleanup

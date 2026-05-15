@@ -229,16 +229,141 @@ def extract_source_triples(text: str) -> list[KnowledgeTriple]:
     return _deduplicate(triples)
 
 
-def extract_claim_triples(text: str) -> list[KnowledgeTriple]:
+def extract_claim_triples(text: str, question_context: str = "") -> list[KnowledgeTriple]:
     """
-    Closed-world claim extraction. Now uses spaCy SVO as the primary
-    extractor since structured claims come directly from the LLM via
-    the CLAIMS JSON block in app.py. This function serves as a fallback.
+    Closed-world claim extraction. Uses spaCy SVO as primary, falls back to
+    entity and pattern-based extraction for short factual answers.
     """
-    # Skip heavy parsing for very short texts
-    if not text or len(text.split()) < 3:
+    if not text or not text.strip():
         return []
-    return _deduplicate(_extract_svo_triples(text))
+    
+    # Try SVO first
+    triples = _extract_svo_triples(text)
+    if triples:
+        return _deduplicate(triples)
+        
+    # Fall back to entity/pattern extraction
+    triples = _extract_entity_claims(text, question_context)
+    return _deduplicate(triples)
+
+QUESTION_TAGS = {"WDT", "WP", "WRB", "WP$"}
+QUESTION_WORDS = {"what", "who", "which", "when", "where", "how", "why"}
+
+def _is_valid_subject_chunk(chunk) -> bool:
+    """Filters out noun chunks that contain question words, wh-tags, or pronouns."""
+    for token in chunk:
+        if token.text.lower() in QUESTION_WORDS:
+            return False
+        if token.tag_ in QUESTION_TAGS:
+            return False
+        if token.pos_ == "PRON":
+            return False
+    return True
+
+def _extract_entity_claims(text: str, question_context: str = "") -> list[KnowledgeTriple]:
+    """
+    Fallback extraction for short factual answers, entities, and numeric patterns.
+    Handles four specific patterns as a Tier 2.5 extractor.
+    """
+    if not text or "INSUFFICIENT DATA" in text.upper():
+        return []
+        
+    nlp = _load_spacy_model()
+    doc = nlp(text)
+    triples: list[KnowledgeTriple] = []
+    
+    # Pattern 1 — Named entity answers (Filtered for quality)
+    # Only ORG, GPE, LOC, WORK_OF_ART, EVENT, DATE are trusted for factual extraction fallback.
+    entities = [ent for ent in doc.ents if ent.label_ in {"ORG", "GPE", "LOC", "WORK_OF_ART", "EVENT", "DATE"}]
+    for ent in entities:
+        triples.append(KnowledgeTriple(
+            subject=ent.text,
+            verb="is",
+            object=ent.label_.lower(),
+            extraction_method="entity_fallback",
+            is_deterministic=True
+        ))
+    if len(entities) >= 2:
+        triples.append(KnowledgeTriple(
+            subject=entities[0].text,
+            verb="related to",
+            object=entities[1].text,
+            extraction_method="entity_fallback",
+            is_deterministic=True
+        ))
+        
+    # Pattern 2 — Numeric/quantity answers
+    numeric_regex = r'(\d+\.?\d*\s*%|\d+\.?\d*\s*(?:million|billion|thousand|tonnes|kg|km|years?|days?)|\b\d+\b)'
+    for sent in doc.sents:
+        for match in re.finditer(numeric_regex, sent.text, re.IGNORECASE):
+            num_val = match.group()
+            match_start_char = sent.start_char + match.start()
+            
+            nearest_chunk = None
+            min_dist = float('inf')
+            
+            for chunk in doc.noun_chunks:
+                if chunk.start_char >= sent.start_char and chunk.end_char <= sent.end_char:
+                    dist = min(abs(chunk.start_char - match_start_char), abs(chunk.end_char - match_start_char))
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_chunk = chunk
+            
+            if nearest_chunk:
+                # FIX: Discard circular triples where subject equals object
+                if nearest_chunk.text.strip().lower() == num_val.strip().lower():
+                    continue
+                    
+                triples.append(KnowledgeTriple(
+                    subject=nearest_chunk.text,
+                    verb="has value",
+                    object=num_val,
+                    extraction_method="entity_fallback",
+                    is_deterministic=True
+                ))
+                
+    # Pattern 3 — "X is Y" copular answers
+    copular_pattern = r'(?:is|was|are|were)\s+([A-Z][^.!?]{2,40})'
+    for sent in doc.sents:
+        for match in re.finditer(copular_pattern, sent.text):
+            obj_match = match.group(1)
+            subj = _find_subject(sent)
+            if subj:
+                triples.append(KnowledgeTriple(
+                    subject=subj,
+                    verb="is",
+                    object=obj_match,
+                    extraction_method="entity_fallback",
+                    is_deterministic=True
+                ))
+                
+    # Pattern 4 — Single word/phrase answers
+    clean_text = text.strip().strip(".,!?;:")
+    words = clean_text.split()
+    if 1 <= len(words) <= 4:
+        has_verb = any(token.pos_ == "VERB" for token in doc)
+        if not has_verb:
+            # FIX: Filter question words and require valid context for subject
+            subj = None
+            if question_context:
+                q_doc = nlp(question_context)
+                # Filter noun chunks using the new wh-word/pronoun validator
+                valid_chunks = [chunk for chunk in q_doc.noun_chunks if _is_valid_subject_chunk(chunk)]
+                if valid_chunks:
+                    subj = valid_chunks[0].text
+            
+            # Discard if no valid subject found (no fallback to "answer")
+            if subj:
+                triples.append(KnowledgeTriple(
+                    subject=subj,
+                    verb="is",
+                    object=clean_text,
+                    extraction_method="entity_fallback",
+                    is_deterministic=True
+                ))
+            
+    # Final safety check: discard any triples where subject matches object
+    return [t for t in triples if t.subject.strip().lower() != t.object.strip().lower()]
 
 
 def _deduplicate(triples: list[KnowledgeTriple]) -> list[KnowledgeTriple]:
