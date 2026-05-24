@@ -7,10 +7,12 @@ import core.pipeline as pipeline
 
 @st.cache_resource
 def get_embedder():
+    """Returns a cached SentenceTransformer model."""
     return SentenceTransformer('all-MiniLM-L6-v2')
 
 @st.cache_resource
 def get_cross_encoder():
+    """Returns a cached CrossEncoder model."""
     return CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 def handle_pdf_upload(uploaded_pdf):
