@@ -5,6 +5,7 @@ from core.pipeline import required_system_budget, SYSTEM_INSTRUCTION
 import ui.handlers as handlers
 
 def render_custom_css():
+    # Inject custom CSS for styling
     st.markdown("""
 <style>
 /* ── Import fonts ── */
