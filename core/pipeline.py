@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+# Core pipeline logic
 import json
 import os
 import re
@@ -16,7 +16,7 @@ from shared.extractor import extract_claim_triples, extract_source_triples
 from shared.l3_memory import fetch_clean_facts, save_fact
 from shared.triple import KnowledgeTriple
 
-# --- Constants ---
+# --- Pipeline Constants ---
 SYSTEM_INSTRUCTION = """You are the HADES NMMU. Answer questions using the provided Facts.
 
 MODE 1 — CACHE HIT:
