@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
+# Represents a subject-verb-object knowledge triple
 @dataclass(frozen=True, slots=True)
 class KnowledgeTriple:
     subject: str
